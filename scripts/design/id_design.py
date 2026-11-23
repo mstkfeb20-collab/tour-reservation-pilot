@@ -2,9 +2,11 @@
 
     python3 scripts/design/id_design.py list       # 機能一覧から書類一覧を作り直す（番号は保ち、新しい書類だけ末尾の番号を振る）
     python3 scripts/design/id_design.py scaffold   # 書類一覧で「書く」にした書類のうち、まだないものの設計書ファイルを作る（見出しだけのひな形）
-    python3 scripts/design/id_design.py progress   # 進捗・網羅状況のシートを作り直す
+    python3 scripts/design/id_design.py progress   # 進捗・網羅状況のシートを作り直す（先に git fetch。統合先のブランチと比べて完了かを決める）
     python3 scripts/design/id_design.py export     # 書き出し（ID設計.md）を作る。--check なら食い違いを確かめるだけ
     オプション: --design <設計書のフォルダ>（既定 docs/design）
+              --base <比べるブランチ>（progress 用。既定は環境変数 TAZUNA_BASE_BRANCH、なければ GitHub の既定のブランチ
+              （origin/HEAD）、それもなければ origin/main。develop に統合する案件なら --base origin/develop）
 
 list・scaffold・progress は最後に export も行う。書類一覧の番号は付けたら変えず、機能一覧から外れた書類も消さずに「廃止」にする。
 """
@@ -135,10 +137,25 @@ def open_pr_files():
     return {f["path"] for pr in json.loads(r.stdout or "[]") for f in pr.get("files", [])}
 
 
-def cmd_progress(folder, cat):
+def base_branch(explicit=None):
+    """進捗で「完了」を決めるときに比べるブランチ"""
+    for cand in (explicit, os.environ.get("TAZUNA_BASE_BRANCH")):
+        if cand:
+            return cand
+    head = git("symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    if head.returncode == 0 and head.stdout.strip():
+        return head.stdout.strip()
+    for cand in ("origin/main", "origin/master", "main", "master"):
+        if git("rev-parse", "--verify", "-q", cand).returncode == 0:
+            return cand
+    return "main"
+
+
+def cmd_progress(folder, cat, base=None):
     import transcribe
     files = catalog.design_files(folder)
-    base = "origin/main" if git("rev-parse", "--verify", "-q", "origin/main").returncode == 0 else "main"
+    base = base_branch(base)
+    print("比べるブランチ:", base)
     prs = open_pr_files()
     trans = transcribe.status(folder, ROOT)
     tests = test_refs()
@@ -210,6 +227,7 @@ def main():
     ap.add_argument("command", choices=["list", "scaffold", "progress", "export"])
     ap.add_argument("--design", default=os.path.join(ROOT, "docs", "design"))
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--base", default=None)
     a = ap.parse_args()
     xlsx = os.path.join(a.design, catalog.XLSX)
     snap = os.path.join(a.design, catalog.SNAPSHOT)
@@ -233,7 +251,7 @@ def main():
         for name in cmd_scaffold(a.design, catalog.Catalog(data)):
             print("ひな形:", name)
     elif a.command == "progress":
-        prog, cover = cmd_progress(a.design, catalog.Catalog(data))
+        prog, cover = cmd_progress(a.design, catalog.Catalog(data), a.base)
         write_sheet(xlsx, "進捗", ["書類実体ID", "名前", "機能", "状態", "必須の見出し", "行", "転記", "要件", "テスト"], prog)
         write_sheet(xlsx, "網羅状況", ["書類実体ID", "名前", "項番", "設計項目", "記載", "状況"], cover)
         from collections import Counter
