@@ -1,0 +1,43 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    name: ハーネス（Lint・hooks）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Excel を読む準備（ID 設計の原本）
+        run: pip install openpyxl
+      - name: Lint（共通＋業務固有）
+        env:
+          TAZUNA_PR_BODY: ${{ github.event.pull_request.body }}
+        run: bash scripts/lint/run-all.sh
+      - name: hooks の自己テスト
+        run: bash .github/hooks/tests/test-guard.sh
+      - name: Lint の自己テスト（ID 設計書）
+        run: bash scripts/lint/tests/test-design-docs.sh
+      - name: 転記ツールの自己テスト
+        run: bash scripts/lint/tests/test-design-transcribe.sh
+      - name: ID 設計のコマンドの自己テスト
+        run: bash scripts/lint/tests/test-id-design.sh
+
+  build:
+    name: ビルドとテスト
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: mvn verify（単体テスト・ArchUnit）
+        run: mvn -B verify

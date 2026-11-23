@@ -1,0 +1,22 @@
+# 型（tazuna が管理するファイル）の一覧。scripts/tazuna-update.sh がこの一覧に従って取り込む。
+# 1行1パターン（* は / を含む任意の文字列）。ここにあるファイルは案件で直接直さず、tazuna で直す。
+#
+# 一覧にないファイル（AGENTS.md、CODEOWNERS、deny-commands.txt、protected-paths.txt、
+# docs/、proj-* スキル、lint/domain など）は案件のもの。取り込み時に上書きされない。
+
+.github/skills/base-*
+.github/hooks/tazuna-guard.json
+.github/hooks/scripts/*
+.github/hooks/tests/*
+.github/workflows/verify.yml
+.github/pull_request_template.md
+scripts/lint/lib.sh
+scripts/lint/run-all.sh
+scripts/lint/common/*
+scripts/tazuna-update.sh
+harness/GUIDE.md
+docs/design/ID設計.xlsx
+docs/design/ID設計.md
+scripts/lint/tests/*
+scripts/design/*
+harness/tazuna-paths.txt

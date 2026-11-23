@@ -1,0 +1,42 @@
+# パスごとの承認者。案件では @your-org/... を実際のチーム名に置き換える。
+#   standards-team : 標準化チーム（型の管理）
+#   business-team  : 社員（業務の正しさ）
+#   project-lead   : 案件リーダー（技術責任者）
+# 後に書いた行が優先される。
+
+# 既定: 案件リーダー
+*                                   @your-org/project-lead
+
+# --- tazuna 本体専用（案件では削除）---
+/_tazuna/                           @your-org/standards-team
+
+# --- 型（標準化チーム）---
+/AGENTS.md                          @your-org/project-lead @your-org/standards-team
+/.github/CODEOWNERS                 @your-org/standards-team
+/.github/hooks/                     @your-org/standards-team
+/.github/workflows/                 @your-org/standards-team
+/.github/skills/base-*/             @your-org/standards-team
+/scripts/lint/lib.sh                @your-org/standards-team
+/scripts/lint/run-all.sh            @your-org/standards-team
+/scripts/lint/common/               @your-org/standards-team
+/scripts/lint/tests/                @your-org/standards-team
+/scripts/design/                    @your-org/standards-team
+
+# --- 業務の正本（社員）---
+/docs/requirements/                 @your-org/business-team
+/docs/domain/                       @your-org/business-team
+/scripts/lint/domain/               @your-org/business-team
+/src/test/                          @your-org/business-team @your-org/project-lead
+
+# --- 案件の作法（案件リーダー）---
+/.github/skills/proj-*/             @your-org/project-lead
+/docs/architecture.md               @your-org/project-lead
+/docs/conventions.md                @your-org/project-lead
+/harness/                           @your-org/project-lead
+
+# --- 型の取り込み（/harness/ より後に書いて優先させる）---
+/scripts/tazuna-update.sh           @your-org/standards-team
+/harness/GUIDE.md                   @your-org/standards-team
+/harness/tazuna-paths.txt           @your-org/standards-team
+/harness/tazuna-version             @your-org/project-lead @your-org/standards-team
+/docs/design/                        @your-org/business-team
