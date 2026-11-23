@@ -40,7 +40,7 @@
 - 性能は本番相当（ツアー5千件・予約60万件）のデータで測る（S-19-001/D-12007/1・性能測定の条件）
 <!-- tazuna:design S-19-001 end -->
 
-<!-- tazuna:design S-22-001 begin src=94b5eff04dcf（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-22-001 begin src=17418e9b2256（scripts/design/transcribe.py が作る。手で直さない） -->
 ## S-22-001 処理設計書：振込データ取込
 
 - 予約担当が毎朝手作業で行っている入金の消込をなくし、振込済への更新を朝7時までに済ませる（S-22-001/D-01002/1・処理の目的・利用者）
