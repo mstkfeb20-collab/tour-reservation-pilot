@@ -8,7 +8,7 @@ public enum TransferImportResultCode {
     DUPLICATE_PAYMENT("31", "二重振込"),
     PAID_AFTER_CANCELLATION("32", "取消後の入金"),
     REVERSAL("40", "要確認（組戻し）"),
-    REVIEW("40", "要確認");
+    REVIEW("41", "要確認");
 
     private final String code;
     private final String label;

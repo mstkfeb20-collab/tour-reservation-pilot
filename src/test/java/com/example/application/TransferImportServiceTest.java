@@ -88,6 +88,20 @@ class TransferImportServiceTest {
     }
 
     @Test
+    @DisplayName("振込依頼人名だけに予約番号がある場合は依頼人名から照合する")
+    void payerNameOnlyMatches() {
+        Reservation reservation = reserve("R000000000001");
+
+        TransferImportOutcome outcome = service.importFile(file(
+            detail("000001", 10_000, reservation.reserveNo(), "", "0")
+        ), "bank.dat");
+
+        assertEquals(TransferImportResultCode.SETTLED, outcome.records().get(0).result());
+        assertEquals(reservation.reserveNo(), outcome.records().get(0).reserveNo());
+        assertEquals(TransferStatus.PAID, reservation.status());
+    }
+
+    @Test
     @DisplayName("一致・1円不足・1円超過を区別して、不足と超過では振込済にしない")
     void amountBoundaries() {
         Reservation exact = reserve("R000000000001");
@@ -129,6 +143,7 @@ class TransferImportServiceTest {
             TransferImportResultCode.PAID_AFTER_CANCELLATION,
             TransferImportResultCode.REVERSAL
         ), outcome.records().stream().map(TransferImportRecord::result).toList());
+        assertEquals("40", outcome.records().get(2).result().code());
         assertEquals(Money.yen(10_000), outcome.records().get(0).amount());
         assertEquals(Money.yen(10_000), outcome.records().get(1).amount());
         assertEquals(0, outcome.handoffs().size());
@@ -210,6 +225,7 @@ class TransferImportServiceTest {
         ), "bank.dat");
 
         assertEquals(TransferImportResultCode.REVIEW, outcome.records().get(0).result());
+        assertEquals("41", outcome.records().get(0).result().code());
         assertEquals(TransferStatus.CANCELLED, reservation.status());
     }
 
