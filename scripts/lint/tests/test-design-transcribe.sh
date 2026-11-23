@@ -31,9 +31,14 @@ cat > "$w/docs/design/S-26-001_予約登録.md" <<'MD'
 ## D-15001 テスト観点・ケース
 
 - [1] 同じ受付トークンで2回確定しても、予約は1件だけ登録される
+- [2] 予約の状態は次のとおり移る
+  ```mermaid
+  stateDiagram-v2
+    仮予約 --> 確定
+  ```
 MD
 run() { TAZUNA_ROOT="$w" python3 "$PY" --design "$w/docs/design" --out "$w" "$@" >/dev/null 2>&1; }
-status() { (cd "$ROOT/scripts/design" && python3 -c "import transcribe,sys; print(transcribe.status(sys.argv[1], sys.argv[2]).get('S-22-001'))" "$w/docs/design" "$w"); }
+status() { (cd "$ROOT/scripts/design" && python3 -c "import transcribe,sys; print(transcribe.status(sys.argv[1], sys.argv[2]).get(sys.argv[3]))" "$w/docs/design" "$w" "${1:-S-22-001}"); }
 req="$w/docs/requirements/S-22-001_予約登録.md"
 
 [ "$(status)" = "未転記" ] && ok || ng "転記前は未転記（$(status)）"
@@ -45,6 +50,7 @@ grep -q '画面設計書へ移した' "$req" && ng "廃止の行は転記しな�
 grep -q '^## テスト仕様：予約登録（S-26-001）' "$req" && grep -q '同じ受付トークン' "$req" && ok || ng "テスト仕様書はテスト仕様の節に入る"
 grep -q 'REQ-26001' "$req" && ng "テスト仕様書から別の要件は作らない" || ok
 [ ! -e "$w/docs/requirements/S-26-001_予約登録.md" ] && ok || ng "テスト仕様書だけの要件ファイルは作らない"
+grep -q '予約の状態は次のとおり移る（S-26-001/D-15001/2' "$req" && grep -q '^    仮予約 --> 確定' "$req" && grep -q '^  ```mermaid' "$req" && ok || ng "行に付けた図は、字下げして行と一緒に転記される"
 [ "$(status)" = "済" ] && ok || ng "転記した後は済（$(status)）"
 cp "$req" "$w/before"; run; cmp -s "$req" "$w/before" && ok || ng "作り直しても変わらない（冪等）"
 printf '\n手で書いたメモ\n' >> "$req"; run; grep -q '手で書いたメモ' "$req" && ok || ng "目印の外の手書きは残る"
@@ -55,6 +61,9 @@ sed -i 's/合計が1人以上であること/合計が1人以上9人以下であ
 run --check && ok || ng "設計書だけ先に直したときはエラーにしない"
 [ "$(status)" = "要転記" ] && ok || ng "設計書だけ先に直すと要転記（$(status)）"
 run; grep -q '1人以上9人以下' "$req" && [ "$(status)" = "済" ] && ok || ng "転記し直すと済に戻る"
+sed -i 's/仮予約 --> 確定/仮予約 --> 取消/' "$w/docs/design/S-26-001_予約登録.md"
+[ "$(status S-26-001)" = "要転記" ] && ok || ng "図だけ直しても要転記（$(status S-26-001)）"
+run; grep -q '仮予約 --> 取消' "$req" && ok || ng "図の変更も転記される"
 rm -rf "$w"
 
 echo "design-transcribe: ${pass} 件成功 / ${fail} 件失敗"

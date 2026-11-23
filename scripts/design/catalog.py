@@ -22,7 +22,7 @@ LAYER = {"共通設計": "共通", "開発・運用": "共通", "機能別設計
 TABLES = [
     ("機能一覧", ["機能", "画面", "ジョブ", "IF", "帳票", "テーブル", "説明"]),
     ("書類一覧", ["書類実体ID", "書類ID", "書類名", "名前", "機能", "作成", "理由"]),
-    ("書類の種類", ["書類ID", "書類名", "区分", "作る単位", "目的", "主な読み手", "書く人", "承認する人"]),
+    ("書類の種類", ["書類ID", "書類名", "区分", "作る単位", "目的", "主な読み手", "書く人", "承認する人", "役割", "状態"]),
     ("記載項目", ["書類ID", "項番", "設計項目", "記載", "この書類で書くこと"]),
     ("設計項目", ["項番", "観点", "設計項目", "性質", "機械検査", "業務承認", "記述の型", "決めること", "例", "型で用意済み"]),
 ]
@@ -133,10 +133,20 @@ class Catalog:
     def layer(self, doc):
         return LAYER.get(self.docs.get(doc, {}).get("区分", ""), "共通")
 
+    def role(self, doc):
+        """書類の種類の役割（機能の中心・テスト仕様・空）。書類IDの番号には意味を持たせない"""
+        return (self.docs.get(doc, {}).get("役割") or "").strip()
+
+    def doc_of_role(self, role):
+        return next((d for d in self.docs if self.role(d) == role), None)
+
+    def retired(self, doc):
+        return (self.docs.get(doc, {}).get("状態") or "").strip() == "廃止"
+
     def function_of(self, inst):
-        """書類実体が属する処理設計書（S-22-nnn）。処理設計書自身は自分、共通の書類は None"""
+        """書類実体が属する機能の中心の書類（例: 処理設計書の実体）。中心の書類自身は自分、共通の書類は None"""
         r = self.instances.get(inst)
-        if inst.startswith("S-22-"):
+        if self.role(inst.rsplit("-", 1)[0]) == "機能の中心":
             return inst
         return r["funcs"][0] if r and r["funcs"] else None
 
@@ -171,13 +181,53 @@ REF_FULL_RE = re.compile(r"(S-\d{2}-\d{3})/(D-\d{5})/(\d+)")
 NA_RE = re.compile(r"^該当なし")
 
 
-def parse_design(text):
+def scan_design(text):
     """設計書の本文を読む。行は「- [番号] 本文」。番号は見出しの中で付ける。
+    行の下に字下げして書いたもの（図の ``` ブロック・表など）は、その行の添付として扱う。
     heads: [(行番号, 項番 or None, 見出しの名前)]
     lines: [(行番号, 番号 or None（形が違う行）, 本文, 直前の見出しの項番)]
-    na: 「該当なし（理由）」と書いた見出しの項番の集合"""
+    na: 「該当なし（理由）」と書いた見出しの項番の集合
+    attach: {行の行番号: 添付（字下げを外した文字列）}
+    loose: [どの行にも付いていない ``` ブロックの開始行番号]"""
     heads, lines, na, current = [], [], set(), None
+    attach, loose = {}, []
+    owner, buf, fence = None, [], None  # 添付を集めている行・その中身・開いている囲み（字下げ, 記号, 行に付くか）
+
+    def flush():
+        nonlocal owner, buf
+        if owner is not None:
+            while buf and not buf[-1].strip():
+                buf.pop()
+            while buf and not buf[0].strip():
+                buf.pop(0)
+            if buf:
+                ind = min(len(b) - len(b.lstrip()) for b in buf if b.strip())
+                attach[owner] = "\n".join(b[ind:] for b in buf)
+        owner, buf = None, []
+
     for n, raw in enumerate(text.splitlines(), 1):
+        stripped = raw.lstrip()
+        indent = len(raw) - len(stripped)
+        if fence is not None:  # 囲みの中は見出しも行も読まない
+            if fence[2]:
+                buf.append(raw)
+            if stripped.startswith(fence[1]) and not stripped[len(fence[1]):].strip("`~ "):
+                fence = None
+            continue
+        if stripped.startswith(("```", "~~~")):
+            mark = stripped[:3]
+            attached = owner is not None and indent > 0
+            if not attached:
+                flush()
+                loose.append(n)
+            else:
+                buf.append(raw)
+            fence = (indent, mark, attached)
+            continue
+        if owner is not None and (indent > 0 or not raw.strip()):
+            buf.append(raw)
+            continue
+        flush()
         if raw.startswith("## "):
             m = HEAD_RE.match(raw)
             heads.append((n, m.group(1) if m else None, m.group(2) if m else raw[3:]))
@@ -185,9 +235,16 @@ def parse_design(text):
         elif raw.startswith("- "):
             m = LINE_RE.match(raw)
             lines.append((n, m.group(1) if m else None, m.group(2) if m else raw[2:], current))
+            owner = n
         elif current and NA_RE.match(raw.strip()):
             na.add(current)
-    return heads, lines, na
+    flush()
+    return heads, lines, na, attach, loose
+
+
+def parse_design(text):
+    """scan_design の見出し・行・該当なし（添付を使わない呼び出し元向け）"""
+    return scan_design(text)[:3]
 
 
 def line_id(inst, item, num):

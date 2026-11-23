@@ -32,6 +32,7 @@
 /.github/skills/proj-*/             @your-org/project-lead
 /docs/architecture.md               @your-org/project-lead
 /docs/conventions.md                @your-org/project-lead
+/db/schema/                         @your-org/project-lead
 /harness/                           @your-org/project-lead
 
 # --- 型の取り込み（/harness/ より後に書いて優先させる）---

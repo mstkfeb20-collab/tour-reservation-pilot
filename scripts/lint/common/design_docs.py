@@ -86,7 +86,11 @@ def main():
         allowed = records.get(doc, {})
         with open(path, encoding="utf-8") as fp:
             body = fp.read()
-        heads, lines, _ = catalog.parse_design(body)
+        heads, lines, _, _, loose = catalog.scan_design(body)
+        for n in loose:
+            error(f"{rel}:{n}", "図や ``` のブロックがどの行にも付いていません",
+                  "図は行と一緒に転記します。行に付いていない図は転記されず、どの決定の図か分からなくなります",
+                  "図を説明する行「- [n] 本文」の直下に、2文字字下げして書いてください")
 
         for n, iid, label in heads:
             where = f"{rel}:{n}"
@@ -184,7 +188,7 @@ def check_registry(cat, reg_rel, files, docs):
         if doc not in docs:
             error(reg_rel, f"{inst} の書類ID {doc} がドキュメント体系にありません", why, fix_list)
             continue
-        needs = docs[doc]["区分"] == "機能別設計" and doc != "S-22"
+        needs = docs[doc]["区分"] == "機能別設計" and cat.role(doc) != "機能の中心"
         if needs and not r["funcs"] and r["作成"] == "書く":
             error(reg_rel, f"{inst} {r['名前']} の「機能」が空です", why, "機能一覧で、この書類を使う機能の行に書いてから list を実行してください")
         for f in r["funcs"]:

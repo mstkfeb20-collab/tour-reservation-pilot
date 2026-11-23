@@ -33,6 +33,10 @@ elif cmd == "delfunc":
     ws = wb["機能一覧"]
     for i in range(ws.max_row, 1, -1):
         if ws.cell(i, 1).value == sys.argv[3]: ws.delete_rows(i)
+elif cmd == "retire":
+    ws = wb["書類の種類"]; head = [c.value for c in ws[1]]; col = head.index("状態")
+    for row in ws.iter_rows(min_row=2):
+        if row[0].value == sys.argv[3]: row[col].value = "廃止"
 elif cmd == "skip":
     for row in wb["書類一覧"].iter_rows(min_row=2):
         if row[0].value == sys.argv[3]: row[5].value = "書かない"; row[6].value = "要らない"
@@ -46,8 +50,11 @@ edit func "振込データ取込||J110|IF-11||TRANSFER_IMPORT|"
 run list
 row "S-22-001" | grep -q '予約登録' && row "S-22-002" | grep -q '振込データ取込' && ok || ng "機能ごとに処理設計書ができる"
 row "S-23-001" | grep -q 'J110 | S-22-002' && ok || ng "ジョブ設計書の機能は、そのジョブを使う処理設計書"
-row "S-16-001" | grep -q 'TRANSFER_IMPORT |  |' && ok || ng "テーブル定義書は機能を持たない"
+row "S-21-001" | grep -q '予約入力 | S-22-001' && ok || ng "役割が機能の中心でない書類（画面設計書）は、機能の処理設計書に属する"
+row "S-16-001" | grep -q 'TRANSFER_IMPORT |  |' && ok || ng "テーブル設計書は機能を持たない"
 row "S-11-001" | grep -q '方式設計書' && ok || ng "システムに1つの書類は自動で並ぶ"
+row "S-20-001" | grep -q 'データモデル設計書' && ok || ng "データモデル設計書が並ぶ"
+[ -z "$(row 'S-10-001')" ] && ok || ng "状態が廃止の書類の種類は並ばない"
 edit skip "S-33-001"
 edit func "ツアー検索|ツアー検索||||TOURINFO|"
 edit delfunc "予約登録"
@@ -55,6 +62,9 @@ run list
 row "S-22-002" | grep -q '振込データ取込' && row "S-22-003" | grep -q 'ツアー検索' && ok || ng "番号は保たれ、新しい機能は末尾の番号"
 row "S-22-001" | grep -q '廃止' && ok || ng "機能一覧から外れた書類は消さずに廃止"
 row "S-33-001" | grep -q '書かない | 要らない' && ok || ng "人が付けた「書かない」と理由は残る"
+edit retire "S-31"
+run list
+row "S-31-001" | grep -q '廃止 | 書類の種類を廃止した' && ok || ng "書類の種類を廃止すると、その書類は消さずに廃止"
 run scaffold
 f="$w/docs/design/S-23-001_J110.md"
 [ -f "$f" ] && grep -q '^## D-08002 起動条件' "$f" && ok || ng "ひな形に記載項目の見出しが並ぶ"

@@ -9,15 +9,15 @@
 - 「振込済」は「入金済」と書かない。銀行振込以外の入金手段がないため（S-12-001/D-02011/2・文言・ラベル）
 <!-- tazuna:design S-12-001 end -->
 
-<!-- tazuna:design S-16-001 begin src=30f01df2f872（scripts/design/transcribe.py が作る。手で直さない） -->
-## S-16-001 テーブル定義書：RESERVE
+<!-- tazuna:design S-16-001 begin src=0b2add49521b（scripts/design/transcribe.py が作る。手で直さない） -->
+## S-16-001 テーブル設計書：RESERVE
 
 - 予約は年間約30万件増える。照会は直近2年分が対象（S-16-001/D-05011/1・データ量・増加見込み）
 - RESERVE は年間約30万件増える。販売開始日は1時間に最大3千件登録される（S-16-001/D-05011/2・データ量・増加見込み）
 <!-- tazuna:design S-16-001 end -->
 
-<!-- tazuna:design S-16-002 begin src=2efdf072264d（scripts/design/transcribe.py が作る。手で直さない） -->
-## S-16-002 テーブル定義書：TRANSFER_IMPORT
+<!-- tazuna:design S-16-002 begin src=fad89f13ca30（scripts/design/transcribe.py が作る。手で直さない） -->
+## S-16-002 テーブル設計書：TRANSFER_IMPORT
 
 - 振込明細は平常1日300件、繁忙期は最大3千件（S-16-002/D-05011/1・データ量・増加見込み）
 <!-- tazuna:design S-16-002 end -->
@@ -73,3 +73,9 @@
 
 - 新しいユースケースは ReservationService#reserve を手本にする（S-34-001/D-18007/1・手本とするコード）
 <!-- tazuna:design S-34-001 end -->
+
+<!-- tazuna:design S-20-001 begin src=3fd8a8d1d3c2（scripts/design/transcribe.py が作る。手で直さない） -->
+## S-20-001 データモデル設計書：データモデル設計書
+
+- TOURINFO と MEMBER はマスタ、RESERVE と TRANSFER_IMPORT はトランザクション（S-20-001/D-05014/1・マスタとトランザクションの区別）
+<!-- tazuna:design S-20-001 end -->

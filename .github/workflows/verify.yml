@@ -32,6 +32,8 @@ jobs:
         run: bash scripts/lint/tests/test-design-transcribe.sh
       - name: ID 設計のコマンドの自己テスト
         run: bash scripts/lint/tests/test-id-design.sh
+      - name: Lint の自己テスト（DDL の説明）
+        run: bash scripts/lint/tests/test-ddl-comments.sh
 
   build:
     name: ビルドとテスト

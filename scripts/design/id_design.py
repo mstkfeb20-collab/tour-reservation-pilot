@@ -38,18 +38,21 @@ def derive(data):
     out = []
     funcs = data["機能一覧"]
     for t in data["書類の種類"]:
+        if (t.get("状態") or "").strip() == "廃止":
+            continue
         doc, col = t["書類ID"], unit_column(t["作る単位"])
+        center = (t.get("役割") or "").strip() == "機能の中心"
         if col is None:
             out.append((doc, t["書類名"], []))
         elif col == "機能":
             for f in funcs:
-                out.append((doc, f["機能"], [] if doc == "S-22" else [f["機能"]]))
+                out.append((doc, f["機能"], [] if center else [f["機能"]]))
         else:
             seen = {}
             for f in funcs:
                 for name in catalog.split(f.get(col)):
                     seen.setdefault(name, [])
-                    if col != "テーブル":  # テーブル定義書は共通設計なので機能を持たない
+                    if col != "テーブル":  # テーブル設計書は共通設計なので機能を持たない
                         seen[name].append(f["機能"])
             out += [(doc, name, fs) for name, fs in seen.items()]
     return out
@@ -61,7 +64,7 @@ def cmd_list(data):
     for r in data["書類一覧"]:
         nums[r["書類ID"]] = max(nums.get(r["書類ID"], 0), int(r["書類実体ID"][-3:]))
     want = derive(data)
-    # 処理設計書の書類実体ID（機能の名前 → S-22-nnn）を先に決める
+    # 機能の中心の書類（処理設計書など）の書類実体ID（機能の名前 → 書類実体ID）を先に決める
     rows, keys = {}, set()
     for doc, name, _ in want:
         key = (doc, name)
@@ -73,7 +76,9 @@ def cmd_list(data):
         else:
             nums[doc] = nums.get(doc, 0) + 1
             rows[key] = {"書類実体ID": f"{doc}-{nums[doc]:03d}", "書類ID": doc, "名前": name, "作成": "書く", "理由": ""}
-    s22 = {name: r["書類実体ID"] for (doc, name), r in rows.items() if doc == "S-22"}
+    centers = {t["書類ID"] for t in data["書類の種類"] if (t.get("役割") or "").strip() == "機能の中心"}
+    retired = {t["書類ID"] for t in data["書類の種類"] if (t.get("状態") or "").strip() == "廃止"}
+    s22 = {name: r["書類実体ID"] for (doc, name), r in rows.items() if doc in centers}
     docname = {t["書類ID"]: t["書類名"] for t in data["書類の種類"]}
     for doc, name, fs in want:
         r = rows[(doc, name)]
@@ -82,7 +87,8 @@ def cmd_list(data):
     for key, r in old.items():  # 機能一覧から外れた書類は消さずに廃止にする
         if key not in keys:
             r = dict(r)
-            r["作成"], r["理由"] = "廃止", r["理由"] or "機能一覧から外れた"
+            r["作成"] = "廃止"
+            r["理由"] = r["理由"] or ("書類の種類を廃止した" if key[0] in retired else "機能一覧から外れた")
             rows[key] = r
     data["書類一覧"] = sorted(rows.values(), key=lambda r: r["書類実体ID"])
     return data
@@ -112,7 +118,8 @@ def cmd_scaffold(folder, cat):
               "> 見出しの下に、1行に1つの決定事項を「- [番号] 本文」で書く。番号は見出しの中で 1, 2, 3 と付け、"
               "後から足すときはその見出しの末尾の続きにする（振り直さない）。消すときは行を残して「（廃止）」と書く。"
               "書くことがない見出しには「該当なし（理由）」と書く。順序が大事なときは、順序を決める見出し"
-              "（処理シーケンス・優先順位など）に「D-04001 の [1] → [3] の順」のように書く。", ""]
+              "（処理シーケンス・優先順位など）に「D-04001 の [1] → [3] の順」のように書く。"
+              "図（Mermaid など）や表は、それを説明する行の直下に2文字字下げして書く（行と一緒に転記される）。", ""]
         for iid, rec in sorted(cat.records.get(doc, {}).items()):
             note = f"（{rec['記載']}）" + (f" {rec['この書類で書くこと']}" if rec["この書類で書くこと"] else "")
             md += [f"## {iid} {rec['設計項目']}", "", f"<!-- {note} -->", ""]

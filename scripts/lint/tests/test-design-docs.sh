@@ -105,5 +105,28 @@ out=$(TAZUNA_ROOT="$repo" python3 "$PY" "$repo/docs/design" --base HEAD 2>&1); r
 if [ "$rc" -eq 0 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: 廃止にした行は通る"; echo "$out" | head -5; fi
 rm -rf "$repo"
 
+case_ "行に図を付けられる（図の中の - や ## は行・見出しにしない）" ok "S-21-002_予約入力.md" '# S-21-002 画面設計書：予約入力
+
+## D-02002 画面項目定義
+
+- [1] 画面の項目の並び
+  ```mermaid
+  flowchart LR
+  - [5] これは図の中
+  ## これも図の中
+  ```
+- [2] 備考: テキストエリア、最大80文字
+'
+case_ "どの行にも付いていない図" ng "S-21-002_予約入力.md" '# S-21-002 画面設計書：予約入力
+
+## D-02002 画面項目定義
+
+- [1] 大人人数: プルダウン
+
+```mermaid
+flowchart LR
+```
+' "図や \`\`\` のブロックがどの行にも付いていません"
+
 echo "design-docs: ${pass} 件成功 / ${fail} 件失敗"
 [ "$fail" -eq 0 ]

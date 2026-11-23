@@ -24,6 +24,7 @@
 | 業務ルール・用語・機能一覧 | `docs/domain/` |
 | レイヤーと依存方向 | `docs/architecture.md` |
 | 命名・作法 | `docs/conventions.md` |
+| テーブル・列の意味と制約 | `db/schema/*.sql`（DDL が正。区分値の意味は列の説明が指す設計書の行） |
 
 ## 編集できないファイル
 `docs/requirements/`、`docs/domain/invariants.md`、`base-*` スキル、共通Lint、hooks、CI は hooks で保護されている。変更が必要なときはPRの説明に変更案を書く。

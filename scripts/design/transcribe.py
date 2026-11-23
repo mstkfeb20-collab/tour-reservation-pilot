@@ -44,9 +44,9 @@ TASK_NAMES = [("設計", "型・API・DB 制約で書けなくする"), ("Lint",
 
 def read_lines(path, inst, cat):
     """[(行ID, 本文, 項番, 属性)]（廃止の行・形の違う行は除く）"""
-    _, lines, _ = catalog.parse_design(open(path, encoding="utf-8").read())
+    _, lines, _, attach, _ = catalog.scan_design(open(path, encoding="utf-8").read())
     out = []
-    for _, num, text, under in lines:
+    for n, num, text, under in lines:
         if under not in cat.items or num is None or text.startswith("（廃止）"):
             continue
         lid = catalog.line_id(inst, under, num)
@@ -58,7 +58,7 @@ def read_lines(path, inst, cat):
                 if k in KEYS:
                     x[k] = v
             text = text[:o.start()]
-        out.append((lid, text, under, x))
+        out.append((lid, text, under, x, attach.get(n, "")))
     return out
 
 
@@ -90,13 +90,16 @@ def plan(folder):
         else:
             home = f"{inst}_{title}"
         home_title = home.split("_", 1)[1]
-        srcs[inst] = hashlib.sha1(repr((lines, func, common)).encode()).hexdigest()[:12]
+        # 図を付けていない行は以前と同じ形で指紋を取る（ツールを更新しただけで「要転記」にならないように）
+        keyed = [ln if ln[4] else ln[:4] for ln in lines]
+        srcs[inst] = hashlib.sha1(repr((keyed, func, common)).encode()).hexdigest()[:12]
 
         req, spec, cond, basis, cand, know, tasks = [], [], [], [], [], [], {}
-        for lid, text, iid, x in lines:
+        for lid, text, iid, x, att in lines:
             main, sub = catalog.destination(x["性質"], x["機械検査"], x["業務承認"])
-            entry = f"- {text}（{lid}・{cat.items[iid]['設計項目']}）"
-            if main == "テスト" and doc == "S-26":
+            more = "".join("\n  " + a if a.strip() else "\n" for a in att.splitlines()) if att else ""
+            entry = f"- {text}（{lid}・{cat.items[iid]['設計項目']}）{more}"
+            if main == "テスト" and cat.role(doc) == "テスト仕様":
                 spec.append(entry)
             elif main == "テスト" and x["業務承認"] == "要":
                 (cand if common else req).append(entry)
@@ -105,7 +108,7 @@ def plan(folder):
             elif main == "知識":
                 know.append(entry)
             else:
-                tasks.setdefault(main, []).append(f"- [ ] {text}（{lid}・{cat.items[iid]['設計項目']}）")
+                tasks.setdefault(main, []).append(f"- [ ] {text}（{lid}・{cat.items[iid]['設計項目']}）{more}")
             if sub == "AIへの条件":
                 cond.append(entry)
             if sub == "根拠" and main != "テスト":
@@ -113,11 +116,12 @@ def plan(folder):
 
         if not common and (req or cond or basis or spec):
             body = []
-            if doc == "S-22" or req:
-                suffix = "" if doc == "S-22" else f"（{docname}）"
+            center = cat.role(doc) == "機能の中心"
+            if center or req:
+                suffix = "" if center else f"（{docname}）"
                 body += [f"## REQ-{doc[2:]}{inst[-3:]} {title}{suffix}", "", f"- 背景: ID 設計 {label} で決めた完了条件。", "- 完了条件:"]
-                body += [f"  {e}" for e in req]
-            elif doc != "S-26" and (cond or basis):
+                body += ["\n".join("  " + x if x else x for x in e.split("\n")) for e in req]
+            elif cat.role(doc) != "テスト仕様" and (cond or basis):
                 body += [f"## {title}（{docname}・{inst}）"]
             if spec:
                 body += [f"## テスト仕様：{title}（{inst}）", "",
@@ -134,7 +138,7 @@ def plan(folder):
         if common and cand:
             put(f"docs/domain/candidates/design-{inst}_{title}.md", inst,
                 [f"## {label}", "", "社員が各行の判定（承認・却下・保留）を決め、承認したものを invariants.md に「防ぐ層」「担保」付きで移す。", ""]
-                + [f"{e}　判定: 未" for e in cand],
+                + [e.replace("\n", "　判定: 未\n", 1) if "\n" in e else f"{e}　判定: 未" for e in cand],
                 [f"# 不変条件の候補：{title}", "", "> ID 設計から転記した、システム共通の業務ルールの候補。正本ではない。", ""])
         if know:
             put("docs/domain/background.md", inst, [f"## {label}", ""] + know,
