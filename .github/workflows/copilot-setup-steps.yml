@@ -1,0 +1,42 @@
+# GitHub 上の Copilot（クラウドエージェント）が作業を始める前に、作業環境を用意する。
+# エージェントの作業中は外部への通信が GitHub と Copilot の宛先に絞られるため、
+# Maven の依存ライブラリやプラグイン、Lint とツールが使う Python のライブラリはここで先に取っておく。
+# ジョブ名は copilot-setup-steps でなければ使われない。このファイルを変えたときは、PR で下の push / pull_request が試しに動く。
+name: Copilot の作業環境の準備
+
+on:
+  workflow_dispatch:
+  push:
+    paths: [.github/workflows/copilot-setup-steps.yml]
+  pull_request:
+    paths: [.github/workflows/copilot-setup-steps.yml]
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 進捗・Lint が比べ先のブランチの履歴を使う
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'   # pom.xml の maven.compiler.release と合わせる
+          cache: maven
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python のライブラリ（ID 設計のツールが Excel を読む）
+        run: pip install openpyxl
+
+      - name: Maven の依存ライブラリとプラグインを取っておく
+        # テストまで一度動かして、テスト実行用のプラグインも取る。ここではテストの失敗で止めない
+        run: |
+          mvn -B -q dependency:go-offline
+          mvn -B -q verify -Dmaven.test.failure.ignore=true

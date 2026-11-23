@@ -9,6 +9,7 @@
 .github/hooks/scripts/*
 .github/hooks/tests/*
 .github/workflows/verify.yml
+.github/workflows/copilot-setup-steps.yml
 .github/pull_request_template.md
 scripts/lint/lib.sh
 scripts/lint/run-all.sh
