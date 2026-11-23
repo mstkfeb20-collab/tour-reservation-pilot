@@ -1,5 +1,6 @@
 package com.example.domain;
 
+import java.time.LocalDate;
 import java.util.Objects;
 
 /**
@@ -16,20 +17,30 @@ public final class Reservation {
     private final int childCount;
     private final Money sumPrice;
     private final String remarks;
+    private final LocalDate payDueDate;
     private TransferStatus status;
+    private LocalDate paidDate;
+    private Money paidAmount;
+    private boolean latePayment;
+    private long version = 1;
 
-    private Reservation(String reserveNo, String tourCode, int adultCount, int childCount, Money sumPrice, String remarks) {
+    private Reservation(String reserveNo, String tourCode, int adultCount, int childCount, Money sumPrice, String remarks, LocalDate payDueDate) {
         this.reserveNo = Objects.requireNonNull(reserveNo);
         this.tourCode = Objects.requireNonNull(tourCode);
         this.adultCount = adultCount;
         this.childCount = childCount;
         this.sumPrice = Objects.requireNonNull(sumPrice);
         this.remarks = remarks == null ? "" : remarks;
+        this.payDueDate = payDueDate;
         this.status = TransferStatus.UNPAID;
     }
 
     /** 入力条件（REQ-001）を満たす予約だけを作る。 */
     public static Reservation create(String reserveNo, Tour tour, int adultCount, int childCount, String remarks) {
+        return create(reserveNo, tour, adultCount, childCount, remarks, null);
+    }
+
+    public static Reservation create(String reserveNo, Tour tour, int adultCount, int childCount, String remarks, LocalDate payDueDate) {
         if (adultCount < 0 || childCount < 0) {
             throw new IllegalArgumentException("人数は0以上で指定してください");
         }
@@ -42,21 +53,37 @@ public final class Reservation {
         if (remarks != null && remarks.length() > REMARKS_MAX_LENGTH) {
             throw new IllegalArgumentException("備考は" + REMARKS_MAX_LENGTH + "文字以内で入力してください");
         }
-        return new Reservation(reserveNo, tour.code(), adultCount, childCount, tour.priceFor(adultCount, childCount), remarks);
+        return new Reservation(reserveNo, tour.code(), adultCount, childCount, tour.priceFor(adultCount, childCount), remarks, payDueDate);
     }
 
-    public void markPaid() {
+    public synchronized void markPaid() {
         if (status != TransferStatus.UNPAID) {
             throw new IllegalStateException("予約 " + reserveNo + " は" + status.label() + "のため振込済にできません");
         }
         status = TransferStatus.PAID;
+        version++;
     }
 
-    public void cancel() {
+    public synchronized void markPaid(long expectedVersion, LocalDate date, Money amount, boolean latePayment) {
+        if (version != expectedVersion) {
+            throw new IllegalStateException("予約 " + reserveNo + " は他の処理で更新されています");
+        }
+        if (status != TransferStatus.UNPAID) {
+            throw new IllegalStateException("予約 " + reserveNo + " は" + status.label() + "のため振込済にできません");
+        }
+        paidDate = Objects.requireNonNull(date);
+        paidAmount = Objects.requireNonNull(amount);
+        this.latePayment = latePayment;
+        status = TransferStatus.PAID;
+        version++;
+    }
+
+    public synchronized void cancel() {
         if (status == TransferStatus.CANCELLED) {
             throw new IllegalStateException("予約 " + reserveNo + " は取り消し済みです");
         }
         status = TransferStatus.CANCELLED;
+        version++;
     }
 
     public int headcount() {
@@ -79,7 +106,27 @@ public final class Reservation {
         return remarks;
     }
 
-    public TransferStatus status() {
+    public synchronized TransferStatus status() {
         return status;
+    }
+
+    public LocalDate payDueDate() {
+        return payDueDate;
+    }
+
+    public synchronized LocalDate paidDate() {
+        return paidDate;
+    }
+
+    public synchronized Money paidAmount() {
+        return paidAmount;
+    }
+
+    public synchronized boolean latePayment() {
+        return latePayment;
+    }
+
+    public synchronized long version() {
+        return version;
     }
 }

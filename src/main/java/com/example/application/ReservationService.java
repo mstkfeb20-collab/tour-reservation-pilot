@@ -26,11 +26,23 @@ public class ReservationService {
 
     /** 予約する（REQ-001）。予約の登録と残席の減算はまとめて行う。 */
     public Reservation reserve(String reserveNo, String tourCode, int adultCount, int childCount, String remarks, LocalDate today) {
+        return reserve(reserveNo, tourCode, adultCount, childCount, remarks, today, null);
+    }
+
+    public Reservation reserve(
+        String reserveNo,
+        String tourCode,
+        int adultCount,
+        int childCount,
+        String remarks,
+        LocalDate today,
+        LocalDate payDueDate
+    ) {
         Tour tour = findTour(tourCode);
         if (ChronoUnit.DAYS.between(today, tour.departureDate()) < RESERVE_DEADLINE_DAYS) {
             throw new IllegalStateException("ご予約は出発日の" + RESERVE_DEADLINE_DAYS + "日前までです");
         }
-        Reservation reservation = Reservation.create(reserveNo, tour, adultCount, childCount, remarks);
+        Reservation reservation = Reservation.create(reserveNo, tour, adultCount, childCount, remarks, payDueDate);
         tour.reserveSeats(reservation.headcount());
         reservations.save(reservation);
         tours.save(tour);
