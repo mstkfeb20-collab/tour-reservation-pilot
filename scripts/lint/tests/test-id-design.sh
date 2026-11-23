@@ -11,6 +11,17 @@ python3 -c 'import openpyxl' 2>/dev/null || { echo "openpyxl がないので飛�
 
 w=$(mktemp -d); mkdir -p "$w/docs/design"; cp "$ROOT/docs/design/ID設計.xlsx" "$w/docs/design/"
 x="$w/docs/design/ID設計.xlsx"; md="$w/docs/design/ID設計.md"
+# 案件のリポジトリでも動くように、案件で書いたシート（機能一覧・書類一覧・進捗・網羅状況）を空にしてから試す
+python3 - "$x" <<'PY'
+import sys
+from openpyxl import load_workbook
+wb = load_workbook(sys.argv[1])
+for s in ("機能一覧", "書類一覧", "進捗", "網羅状況"):
+    ws = wb[s]
+    if ws.max_row > 1:
+        ws.delete_rows(2, ws.max_row - 1)
+wb.save(sys.argv[1])
+PY
 run() { (cd "$w" && TAZUNA_ROOT="$w" python3 "$PY" "$@" >/dev/null 2>&1); }
 edit() { python3 - "$x" "$@" <<'PY'
 import sys
