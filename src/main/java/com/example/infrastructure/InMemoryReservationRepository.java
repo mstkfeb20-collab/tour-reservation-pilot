@@ -21,5 +21,4 @@ public class InMemoryReservationRepository implements ReservationRepository {
     public void save(Reservation reservation) {
         store.put(reservation.reserveNo(), reservation);
     }
-
 }
