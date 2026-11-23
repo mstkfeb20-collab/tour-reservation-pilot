@@ -14,11 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # PR では向き先のブランチと比べて、消えた行IDを見つけるため
       - name: Excel を読む準備（ID 設計の原本）
         run: pip install openpyxl
       - name: Lint（共通＋業務固有）
         env:
           TAZUNA_PR_BODY: ${{ github.event.pull_request.body }}
+          DESIGN_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
         run: bash scripts/lint/run-all.sh
       - name: hooks の自己テスト
         run: bash .github/hooks/tests/test-guard.sh

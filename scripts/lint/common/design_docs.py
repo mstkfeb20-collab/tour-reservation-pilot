@@ -11,7 +11,8 @@
   6. ID設計.xlsx の書類一覧に、すべての書類実体が載っていて、ファイル名が一覧の名前と合う
   7. 機能別設計の書類（処理設計書以外）は、書類一覧の「機能」に処理設計書が入っている
   警告だけ出すこと: 書類一覧で「書く」なのにまだファイルがない（id_design.py scaffold で作れる）
-  5. --base を付けたとき: base にあった行IDが消えていない（廃止は消さずに「（廃止）」と書く）
+  5. 見出しの中の番号が 1 から最大まで欠けていない（欠番は行を消したか振り直した跡）
+     --base を付けたとき（CI の PR）: base にあった行IDが消えていない（廃止は消さずに「（廃止）」と書く）
   警告だけ出すこと: 書類の「必須」の記載項目に見出しがない
 カタログ: 設計書のフォルダの ID設計.md（ID設計.xlsx の書き出し。scripts/design/catalog.py）
 """
@@ -129,6 +130,17 @@ def main():
             seen[lid] = where
             for r in catalog.refs(text):
                 pending.append((where, inst, r))
+
+        nums = {}
+        for (under, num), _ in local.items():
+            nums.setdefault(under, set()).add(int(num))
+        for under, got in sorted(nums.items()):
+            missing = [str(i) for i in range(1, max(got) + 1) if i not in got]
+            if missing:
+                error(rel, f"{under} の番号 [{'] ['.join(missing)}] がありません",
+                      "番号は 1 から順に付け、行を消さずに「（廃止）」と書くので、欠番は行を消したか番号を振り直した跡です。"
+                      "消した行を指していたレビューや転記先の参照が切れます",
+                      "消した行を戻して本文を「（廃止）理由」にしてください。振り直した場合は元の番号に戻してください")
 
         have = {iid for _, iid, _ in heads}
         for iid, r in allowed.items():
