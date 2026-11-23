@@ -90,6 +90,8 @@ def write_sheet(path, sheet, cols, rows):
     from openpyxl import load_workbook
     wb = load_workbook(path)
     ws = wb[sheet]
+    for c, name in enumerate(cols, 1):
+        ws.cell(1, c, name)
     if ws.max_row > 1:
         ws.delete_rows(2, ws.max_row - 1)
     for r in rows:
@@ -138,6 +140,7 @@ def cmd_progress(folder, cat):
     prs = open_pr_files()
     trans = transcribe.status(folder, ROOT)
     tests = test_refs()
+    defined = defined_reqs()
     prog, cover = [], []
     for inst, r in sorted(cat.instances.items()):
         doc = r["書類ID"]
@@ -164,17 +167,27 @@ def cmd_progress(folder, cat):
                 state = "レビュー中"
             else:
                 state = "執筆中"
-        req = f"REQ-{doc[2:]}{inst[-3:]}" if doc == "S-22" else ""
+        req = f"REQ-{doc[2:]}{inst[-3:]}"
+        req = req if req in defined else ""
         prog.append({"書類実体ID": inst, "名前": r["名前"], "機能": r["機能"], "状態": state,
                      "必須の見出し": f"{len(done_need)}/{len(need)}", "行": str(len(live)),
                      "転記": trans.get(inst, "—"),
-                     "要件": req, "テスト": ("あり" if req in tests else "未実装") if req and trans.get(inst) in ("済", "要転記") else ""})
+                     "要件": req, "テスト": ("あり" if req in tests else "未実装") if req else ""})
         if r["作成"] in ("書かない", "廃止"):
             continue
         for iid, rec in sorted(cat.records.get(doc, {}).items()):
             st = f"書いた（{written[iid]}行）" if iid in written else ("該当なし" if iid in na else "未記入")
             cover.append({"書類実体ID": inst, "名前": r["名前"], "項番": iid, "設計項目": rec["設計項目"], "記載": rec["記載"], "状況": st})
     return prog, cover
+
+
+def defined_reqs():
+    found = set()
+    d = os.path.join(ROOT, "docs", "requirements")
+    for n in os.listdir(d) if os.path.isdir(d) else []:
+        if n.endswith(".md"):
+            found |= set(re.findall(r"^##\s+(REQ-\d+)", open(os.path.join(d, n), encoding="utf-8").read(), re.M))
+    return found
 
 
 def test_refs():
