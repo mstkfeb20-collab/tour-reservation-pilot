@@ -58,9 +58,19 @@ for id in $referenced; do
 done
 
 # ③④ 実装の PR: 対象要件にテストがある
+# CI の PR では TAZUNA_IS_PR=1。本文に「対象要件:」の行がなければエラー（「対象要件: なし」は可）。
+# 行がないまま通すと、対象要件の検査をしないまま CI が成功してしまう（引用「> 対象要件:」も行とは見なさない）
 targets="${TAZUNA_TARGET_REQS:-}"
-if [ -z "$targets" ] && [ -n "${TAZUNA_PR_BODY:-}" ]; then
-  targets=$(grep -E '^[[:space:]]*対象要件[:：]' <<< "$TAZUNA_PR_BODY" | grep -oE 'REQ-[0-9]+' | tr '\n' ' ')
+if [ -z "$targets" ] && { [ -n "${TAZUNA_PR_BODY:-}" ] || [ "${TAZUNA_IS_PR:-}" = "1" ]; }; then
+  line=$(grep -E '^[[:space:]]*対象要件[:：]' <<< "${TAZUNA_PR_BODY:-}")
+  if [ -z "$line" ] && [ "${TAZUNA_IS_PR:-}" = "1" ]; then
+    lint_error "COMMON-003" "PR の本文" \
+      "PR の本文に「対象要件:」の行がありません" \
+      "対象要件がないと、この PR で実装した要件にテストがあるかを確かめられないまま CI が通ります" \
+      "本文に「対象要件: REQ-22001, REQ-23001」の行を書いてください（要件を実装しない PR は「対象要件: なし」）。本文を直すと CI がやり直されます" \
+      ".github/pull_request_template.md"
+  fi
+  targets=$(grep -oE 'REQ-[0-9]+' <<< "$line" | tr '\n' ' ')
 fi
 for id in $targets; do
   if ! grep -qx "$id" <<< "$defined"; then
