@@ -107,8 +107,10 @@ def cmd_scaffold(folder, cat):
             continue
         doc = r["書類ID"]
         md = [f"# {inst} {r['書類名']}：{r['名前']}", "",
-              "> 見出しの下に、1行に1つの決定事項を「- 行ID 本文」で書く。行IDはこのファイルの末尾の次の番号（例 "
-              f"{inst}-001）。書くことがない見出しには「該当なし（理由）」と書く。", ""]
+              "> 見出しの下に、1行に1つの決定事項を「- [番号] 本文」で書く。番号は見出しの中で 1, 2, 3 と付け、"
+              "後から足すときはその見出しの末尾の続きにする（振り直さない）。消すときは行を残して「（廃止）」と書く。"
+              "書くことがない見出しには「該当なし（理由）」と書く。順序が大事なときは、順序を決める見出し"
+              "（処理シーケンス・優先順位など）に「D-04001 の [1] → [3] の順」のように書く。", ""]
         for iid, rec in sorted(cat.records.get(doc, {}).items()):
             note = f"（{rec['記載']}）" + (f" {rec['この書類で書くこと']}" if rec["この書類で書くこと"] else "")
             md += [f"## {iid} {rec['設計項目']}", "", f"<!-- {note} -->", ""]
@@ -149,7 +151,7 @@ def cmd_progress(folder, cat):
         heads, lines, na = ([], [], set())
         if name:
             heads, lines, na = catalog.parse_design(open(os.path.join(folder, name), encoding="utf-8").read())
-        live = [l for l in lines if not l[2].startswith("（廃止）")]
+        live = [l for l in lines if l[1] and not l[2].startswith("（廃止）")]
         written = {}
         for _, _, _, under in live:
             written[under] = written.get(under, 0) + 1

@@ -164,13 +164,17 @@ def destination(n, c, a):
 
 FILE_RE = re.compile(r"^(S-(\d{2}))-(\d{3})_(.+)\.md$")
 HEAD_RE = re.compile(r"^## (D-\d{5}) (.+?)\s*$")
-LINE_RE = re.compile(r"^- (\S+) (.*)$")
+LINE_RE = re.compile(r"^- \[(\d+)\] (.*)$")
+# 他の行への参照: 同じ書類の中は「D-04001 の [1] → [3]」、別の書類は「S-22-001/D-04001/1」
+REF_LOCAL_RE = re.compile(r"(D-\d{5})\s*の\s*((?:\[\d+\](?:\s*(?:→|、|,|・|と|から)\s*)?)+)")
+REF_FULL_RE = re.compile(r"(S-\d{2}-\d{3})/(D-\d{5})/(\d+)")
 NA_RE = re.compile(r"^該当なし")
 
 
 def parse_design(text):
-    """設計書の本文を読む。
-    heads: [(行番号, 項番 or None, 見出しの名前)]  lines: [(行番号, 行ID, 本文, 直前の見出しの項番)]
+    """設計書の本文を読む。行は「- [番号] 本文」。番号は見出しの中で付ける。
+    heads: [(行番号, 項番 or None, 見出しの名前)]
+    lines: [(行番号, 番号 or None（形が違う行）, 本文, 直前の見出しの項番)]
     na: 「該当なし（理由）」と書いた見出しの項番の集合"""
     heads, lines, na, current = [], [], set(), None
     for n, raw in enumerate(text.splitlines(), 1):
@@ -180,10 +184,23 @@ def parse_design(text):
             current = m.group(1) if m else "?"
         elif raw.startswith("- "):
             m = LINE_RE.match(raw)
-            lines.append((n, m.group(1) if m else "", m.group(2) if m else raw[2:], current))
+            lines.append((n, m.group(1) if m else None, m.group(2) if m else raw[2:], current))
         elif current and NA_RE.match(raw.strip()):
             na.add(current)
     return heads, lines, na
+
+
+def line_id(inst, item, num):
+    """行のID。書類実体／見出しの項番／見出しの中の番号（例 S-23-001/D-08002/2）"""
+    return f"{inst}/{item}/{num}"
+
+
+def refs(text):
+    """本文の中の参照。[(書類実体 or None（同じ書類）, 項番, 番号)]"""
+    out = [(m.group(1), m.group(2), m.group(3)) for m in REF_FULL_RE.finditer(text)]
+    for m in REF_LOCAL_RE.finditer(text):
+        out += [(None, m.group(1), n) for n in re.findall(r"\[(\d+)\]", m.group(2))]
+    return out
 
 
 def design_files(folder):

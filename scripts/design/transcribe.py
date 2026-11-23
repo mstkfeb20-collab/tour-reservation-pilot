@@ -42,13 +42,14 @@ TASK_NAMES = [("設計", "型・API・DB 制約で書けなくする"), ("Lint",
               ("実行検証", "動かして測り、PR に結果を添える"), ("hooks", "hooks で操作を止める"), ("人のための設計", "承認されているか確かめる")]
 
 
-def read_lines(path, cat):
-    """[(行ID, 本文, 項番, 属性)]（廃止の行は除く）"""
+def read_lines(path, inst, cat):
+    """[(行ID, 本文, 項番, 属性)]（廃止の行・形の違う行は除く）"""
     _, lines, _ = catalog.parse_design(open(path, encoding="utf-8").read())
     out = []
-    for _, lid, text, under in lines:
-        if under not in cat.items or text.startswith("（廃止）"):
+    for _, num, text, under in lines:
+        if under not in cat.items or num is None or text.startswith("（廃止）"):
             continue
+        lid = catalog.line_id(inst, under, num)
         x = {k: cat.items[under][k] for k in KEYS}
         o = OVER_RE.search(text)
         if o:
@@ -77,7 +78,7 @@ def plan(folder):
         doc = inst[:4]
         if doc not in cat.docs:
             continue
-        lines = read_lines(os.path.join(folder, name), cat)
+        lines = read_lines(os.path.join(folder, name), inst, cat)
         func = cat.function_of(inst)
         common = cat.layer(doc) == "共通"
         title = name[len(inst) + 1:-3]

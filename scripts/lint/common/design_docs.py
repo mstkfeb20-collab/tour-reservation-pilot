@@ -5,7 +5,8 @@
 検査すること（どれも読むだけで判定できる構造の検査。中身が正しい見出しに書かれているかはスキル base-design-check が見る）:
   1. ファイル名が「書類実体ID_名前.md」（例 S-21-002_予約入力.md）で、書類IDがドキュメント体系にある
   2. 見出し「## D-ccsss 設計項目名」の項番と名前がカタログと一致し、その書類の記載項目に入っている
-  3. 行「- 行ID 本文」の行IDが「書類実体ID-通し番号3桁」で、ファイル名の書類実体IDと一致し、重複しない
+  3. 行は「- [番号] 本文」。番号は見出しの中で重複しない。行の ID は 書類実体／見出しの項番／番号（例 S-23-001/D-08002/2）
+     他の行への参照（「D-04001 の [1] → [3]」「S-22-001/D-04001/1」）の参照先がある
   4. 行がどれかの見出しの下にある
   6. ID設計.xlsx の書類一覧に、すべての書類実体が載っていて、ファイル名が一覧の名前と合う
   7. 機能別設計の書類（処理設計書以外）は、書類一覧の「機能」に処理設計書が入っている
@@ -60,6 +61,7 @@ def main():
     items, docs, records = cat.items, cat.docs, cat.records
 
     seen = {}
+    pending = []  # (場所, 書いた書類実体, 参照)
     files = {}
     reg_rel = os.path.relpath(os.path.join(folder, catalog.XLSX), ROOT) + " の書類一覧"
     for name in sorted(os.listdir(folder)):
@@ -105,22 +107,28 @@ def main():
                       "書類ごとに書く項目を決めておくと、共通か機能別かと置き場所が書類で決まります",
                       f"この項目は {'・'.join(docs_for)} に書いてください")
 
-        for n, lid, text, under in lines:
+        local = {}
+        for n, num, text, under in lines:
             where = f"{rel}:{n}"
-            if not re.fullmatch(rf"{re.escape(inst)}-\d{{3}}", lid):
-                error(where, f"行ID '{lid}' が「{inst}-通し番号3桁」になっていません",
-                      "行IDは書類実体IDとファイル内の通し番号で決め、人の判断を入れないためです",
-                      f"{inst}-NNN の形にしてください。番号はファイルの末尾の次の番号です")
-                continue
-            if lid in seen:
-                error(where, f"行ID {lid} が重複しています（{seen[lid]} にもある）",
-                      "1つの行IDは1つの決定事項だけを指します",
-                      "後から足した方の行に、ファイルの末尾の次の番号を付け直してください")
-            seen[lid] = where
             if under is None:
-                error(where, f"行 {lid} がどの見出しの下にもありません",
+                error(where, "行がどの見出しの下にもありません",
                       "見出しの設計項目が決まらないと、振り分け先が決まりません",
                       "当てはまる設計項目の見出しの下に移してください")
+                continue
+            if num is None:
+                error(where, f"行 '- {text[:30]}' が「- [番号] 本文」になっていません",
+                      "行の ID は 書類／見出し／番号 で決まります。番号がないと、転記先やレビューから行を辿れません",
+                      "見出しの中の末尾の次の番号を付けて「- [3] 本文」のように書いてください")
+                continue
+            lid = catalog.line_id(inst, under, num)
+            if (under, num) in local:
+                error(where, f"{under} の [{num}] が重複しています（{local[(under, num)]} にもある）",
+                      "1つの番号は1つの決定事項だけを指します",
+                      "後から足した方の行に、その見出しの中の末尾の次の番号を付けてください。番号は振り直さないでください")
+            local[(under, num)] = where
+            seen[lid] = where
+            for r in catalog.refs(text):
+                pending.append((where, inst, r))
 
         have = {iid for _, iid, _ in heads}
         for iid, r in allowed.items():
@@ -128,6 +136,13 @@ def main():
                 warn(rel, f"必須の記載項目 {iid} {r['設計項目']} の見出しがありません")
 
     check_registry(cat, reg_rel, files, docs)
+
+    for where, inst, (ri, item, num) in pending:
+        target = catalog.line_id(ri or inst, item, num)
+        if target not in seen:
+            error(where, f"参照している {target} がありません",
+                  "順序や関係を表す行が、存在しない行を指していると、意味が通りません",
+                  "参照先の番号を直すか、参照先の行を書いてください（同じ書類の中は「D-04001 の [1] → [3]」、別の書類は「S-22-001/D-04001/1」）")
 
     if base:
         for lid in removed_ids(folder, base, seen):
@@ -180,7 +195,9 @@ def removed_ids(folder, base, current):
             continue
         text = subprocess.run(["git", "-C", ROOT, "show", f"{base}:{rel}/{name}"],
                               capture_output=True, text=True).stdout
-        old |= {lid for _, lid, _, _ in catalog.parse_design(text)[1] if lid}
+        m = catalog.FILE_RE.match(name)
+        inst = f"{m.group(1)}-{m.group(3)}"
+        old |= {catalog.line_id(inst, under, num) for _, num, _, under in catalog.parse_design(text)[1] if num and under}
     return sorted(old - set(current))
 
 

@@ -2,10 +2,10 @@
 
 > ID 設計から転記した、システム共通の業務ルールの候補。正本ではない。
 
-<!-- tazuna:design S-11-001 begin src=9f4e26d70db0（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-11-001 begin src=d44bf2d1478f（scripts/design/transcribe.py が作る。手で直さない） -->
 ## S-11-001 方式設計書：方式設計書
 
 社員が各行の判定（承認・却下・保留）を決め、承認したものを invariants.md に「防ぐ層」「担保」付きで移す。
 
-- 許可リストにない依存ライブラリは追加しない（S-11-001-021・使用するライブラリと版）　判定: 未
+- 許可リストにない依存ライブラリは追加しない（S-11-001/D-14004/1・使用するライブラリと版）　判定: 未
 <!-- tazuna:design S-11-001 end -->
