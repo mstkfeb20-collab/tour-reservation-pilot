@@ -4,7 +4,6 @@ import com.example.domain.BankTransferDetail;
 import com.example.domain.BankTransferFile;
 import com.example.domain.Money;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
@@ -41,8 +40,6 @@ public class If11FileParser {
         if (!accountNumber.equals("1234567")) {
             throw formatError("入金口座番号が1234567ではありません");
         }
-        requireSpaces(header, 14, RECORD_LENGTH);
-
         byte[] trailer = records.get(records.size() - 2);
         byte[] end = records.get(records.size() - 1);
         requireType(trailer, '8');
@@ -50,8 +47,6 @@ public class If11FileParser {
         requireSpaces(end, 1, RECORD_LENGTH);
         int trailerCount = integer(trailer, 1, 7, "合計件数");
         long trailerAmount = number(trailer, 7, 19, "合計金額");
-        requireSpaces(trailer, 19, RECORD_LENGTH);
-
         List<BankTransferDetail> details = new ArrayList<>();
         Set<String> inquiryNumbers = new HashSet<>();
         Money totalAmount = Money.zero();

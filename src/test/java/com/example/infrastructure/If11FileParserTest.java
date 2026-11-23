@@ -82,4 +82,14 @@ class If11FileParserTest {
         assertThrows(IllegalArgumentException.class, () -> parser.parse(wrongAccount));
         assertThrows(IllegalArgumentException.class, () -> parser.parse(invalidDate));
     }
+
+    @Test
+    @DisplayName("IF-11で未定義のヘッダー・トレーラー領域を空白と決めつけない")
+    void acceptsUnspecifiedHeaderAndTrailerFields() {
+        byte[] file = If11Fixtures.file(List.of());
+        file[14] = 'A';
+        file[202 + 19] = 'B';
+
+        assertEquals(0, parser.parse(file).details().size());
+    }
 }
