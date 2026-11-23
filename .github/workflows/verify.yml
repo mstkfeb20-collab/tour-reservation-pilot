@@ -2,12 +2,15 @@ name: verify
 
 on:
   pull_request:
+    # edited: PR の本文（対象要件）を直したときもやり直す
+    types: [opened, synchronize, reopened, edited]
   push:
     # 統合に使うブランチ。案件の運用（develop・release など）に合わせて足す
     branches: [main, master, develop, 'release/**']
 
 permissions:
   contents: read
+  pull-requests: read   # Lint が PR の今の本文を読むため
 
 jobs:
   harness:
@@ -21,9 +24,18 @@ jobs:
         run: pip install openpyxl
       - name: Lint（共通＋業務固有）
         env:
-          TAZUNA_PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_BODY: ${{ github.event.pull_request.body }}
+          TAZUNA_IS_PR: ${{ github.event_name == 'pull_request' && '1' || '' }}
           DESIGN_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
-        run: bash scripts/lint/run-all.sh
+        run: |
+          # PR の本文は、起動した時点のものではなく今のものを読む（承認待ちの後に流したとき、エージェントが本文を書き換えた後など）
+          if [ -n "$PR_NUMBER" ]; then
+            TAZUNA_PR_BODY=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq .body 2>/dev/null) || TAZUNA_PR_BODY="$EVENT_BODY"
+            export TAZUNA_PR_BODY
+          fi
+          bash scripts/lint/run-all.sh
       - name: hooks の自己テスト
         run: bash .github/hooks/tests/test-guard.sh
       - name: Lint の自己テスト（ID 設計書）
@@ -34,6 +46,8 @@ jobs:
         run: bash scripts/lint/tests/test-id-design.sh
       - name: Lint の自己テスト（DDL の説明）
         run: bash scripts/lint/tests/test-ddl-comments.sh
+      - name: Lint の自己テスト（要件とテストの対応）
+        run: bash scripts/lint/tests/test-requirement-traceability.sh
 
   build:
     name: ビルドとテスト
