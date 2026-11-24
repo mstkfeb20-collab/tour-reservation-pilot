@@ -132,6 +132,16 @@ public final class Reservation {
         return true;
     }
 
+    synchronized void rollbackCancellation(TransferStatus previousStatus, long previousVersion) {
+        if (status != TransferStatus.CANCELLED || previousStatus == TransferStatus.CANCELLED) {
+            throw new IllegalStateException("予約取消を元に戻せる状態ではありません");
+        }
+        status = previousStatus;
+        version = previousVersion;
+        cancelDate = null;
+        cancelReason = null;
+    }
+
     public int headcount() {
         return adultCount + childCount;
     }

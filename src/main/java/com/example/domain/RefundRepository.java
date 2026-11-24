@@ -4,6 +4,7 @@ import java.time.LocalDate;
 
 public interface RefundRepository {
 
+    /** A failed registration must leave no refund for the reservation. */
     Refund register(
         String reserveNo,
         LocalDate cancelDate,
@@ -11,4 +12,6 @@ public interface RefundRepository {
         Money cancelFee,
         String operator
     );
+
+    void rollbackRegistration(String reserveNo);
 }

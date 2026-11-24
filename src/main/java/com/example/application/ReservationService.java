@@ -1,8 +1,8 @@
 package com.example.application;
 
-import com.example.domain.CancellationPolicy;
 import com.example.domain.CancellationAudit;
 import com.example.domain.CancellationAuditRepository;
+import com.example.domain.CancellationPolicy;
 import com.example.domain.Money;
 import com.example.domain.Reservation;
 import com.example.domain.ReservationRepository;
@@ -57,9 +57,11 @@ public class ReservationService {
             throw new IllegalStateException("ご予約は出発日の" + RESERVE_DEADLINE_DAYS + "日前までです");
         }
         Reservation reservation = Reservation.create(reserveNo, tour, memberNo, adultCount, childCount, remarks, null);
-        tour.reserveSeats(reservation.headcount());
-        reservations.save(reservation);
-        tours.save(tour);
+        synchronized (tour) {
+            tour.reserveSeats(reservation.headcount());
+            reservations.save(reservation);
+            tours.save(tour);
+        }
         return reservation;
     }
 
@@ -77,9 +79,11 @@ public class ReservationService {
             throw new IllegalStateException("ご予約は出発日の" + RESERVE_DEADLINE_DAYS + "日前までです");
         }
         Reservation reservation = Reservation.create(reserveNo, tour, adultCount, childCount, remarks, payDueDate);
-        tour.reserveSeats(reservation.headcount());
-        reservations.save(reservation);
-        tours.save(tour);
+        synchronized (tour) {
+            tour.reserveSeats(reservation.headcount());
+            reservations.save(reservation);
+            tours.save(tour);
+        }
         return reservation;
     }
 
@@ -122,25 +126,64 @@ public class ReservationService {
                 Money refund = CancellationPolicy.refund(reservation, days);
                 boolean paid = reservation.status() == TransferStatus.PAID;
                 long expectedVersion = reservation.version();
-                if (!reservations.saveCancellation(reservation, expectedVersion, today, cancelReason)) {
-                    if (attempt == 1) {
-                        throw new IllegalStateException("予約を更新できませんでした");
-                    }
-                    continue;
-                }
-
                 synchronized (tour) {
-                    tour.releaseSeats(reservation.headcount());
-                    tours.save(tour);
+                    if (!reservations.saveCancellation(
+                        reservation,
+                        expectedVersion,
+                        today,
+                        cancelReason,
+                        () -> persistCancellationSideEffects(
+                            reserveNo,
+                            today,
+                            reservation.headcount(),
+                            paid,
+                            fee,
+                            refund,
+                            actor.id(),
+                            tour
+                        )
+                    )) {
+                        if (attempt == 1) {
+                            throw new IllegalStateException("予約を更新できませんでした");
+                        }
+                        continue;
+                    }
+                    return new CancelResult(fee, refund);
                 }
-                if (paid) {
-                    refunds.register(reserveNo, today, refund, fee, actor.id());
-                }
-                cancellationAudit.record(new CancellationAudit(reserveNo, actor.id(), fee, refund));
-                return new CancelResult(fee, refund);
             }
         }
         throw new IllegalStateException("予約を更新できませんでした");
+    }
+
+    private void persistCancellationSideEffects(
+        String reserveNo,
+        LocalDate cancelDate,
+        int headcount,
+        boolean paid,
+        Money fee,
+        Money refund,
+        String operator,
+        Tour tour
+    ) {
+        boolean refundRegistered = false;
+        CancellationAudit auditEntry = new CancellationAudit(reserveNo, operator, fee, refund);
+        try {
+            tour.releaseSeats(headcount);
+            tours.save(tour);
+            if (paid) {
+                refunds.register(reserveNo, cancelDate, refund, fee, operator);
+                refundRegistered = true;
+            }
+            cancellationAudit.record(auditEntry);
+        } catch (RuntimeException exception) {
+            cancellationAudit.remove(auditEntry);
+            if (refundRegistered) {
+                refunds.rollbackRegistration(reserveNo);
+            }
+            tour.reserveSeats(headcount);
+            tours.save(tour);
+            throw exception;
+        }
     }
 
     private void validateCancelReason(String cancelReason) {

@@ -15,6 +15,11 @@ public class InMemoryCancellationAuditRepository implements CancellationAuditRep
         entries.add(entry);
     }
 
+    @Override
+    public void remove(CancellationAudit entry) {
+        entries.remove(entry);
+    }
+
     public List<CancellationAudit> entries() {
         return List.copyOf(entries);
     }

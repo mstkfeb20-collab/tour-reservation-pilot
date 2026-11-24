@@ -14,13 +14,22 @@ public interface ReservationRepository {
         Reservation reservation,
         long expectedVersion,
         LocalDate cancelDate,
-        String cancelReason
+        String cancelReason,
+        Runnable saveRelatedRecords
     ) {
         synchronized (reservation) {
+            TransferStatus previousStatus = reservation.status();
             if (!reservation.cancel(expectedVersion, cancelDate, cancelReason)) {
                 return false;
             }
-            save(reservation);
+            try {
+                save(reservation);
+                saveRelatedRecords.run();
+            } catch (RuntimeException exception) {
+                reservation.rollbackCancellation(previousStatus, expectedVersion);
+                save(reservation);
+                throw exception;
+            }
             return true;
         }
     }

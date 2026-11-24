@@ -57,4 +57,12 @@ public class InMemoryRefundRepository implements RefundRepository {
     public synchronized List<Refund> entries() {
         return List.copyOf(refundsByNumber.values());
     }
+
+    @Override
+    public synchronized void rollbackRegistration(String reserveNo) {
+        Refund removed = refundsByReservation.remove(reserveNo);
+        if (removed != null) {
+            refundsByNumber.remove(removed.refundNo());
+        }
+    }
 }

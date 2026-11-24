@@ -1,6 +1,10 @@
 package com.example.application;
 
+import com.example.domain.CancellationAudit;
+import com.example.domain.CancellationAuditRepository;
 import com.example.domain.Money;
+import com.example.domain.Refund;
+import com.example.domain.RefundRepository;
 import com.example.domain.Reservation;
 import com.example.domain.ReservationRepository;
 import com.example.domain.Tour;
@@ -86,6 +90,66 @@ class ReservationCancellationTest {
         assertEquals(TransferStatus.CANCELLED, reservation.status());
         assertEquals(Money.yen(30_000), audit.entries().get(0).fee());
         assertEquals(Money.yen(30_000), audit.entries().get(0).refund());
+    }
+
+    @Test
+    @DisplayName("返金待ち登録に失敗したら予約と残席を取り消し前に戻す")
+    void rollsBackWhenRefundRegistrationFails() {
+        Reservation reservation = reserve("R1", "M001");
+        service.recordPayment("R1");
+        RefundRepository failingRefunds = new RefundRepository() {
+            @Override
+            public Refund register(
+                String reserveNo,
+                LocalDate cancelDate,
+                Money refundAmount,
+                Money cancelFee,
+                String operator
+            ) {
+                throw new IllegalStateException("返金待ちを登録できません");
+            }
+
+            @Override
+            public void rollbackRegistration(String reserveNo) {
+            }
+        };
+        service = new ReservationService(tours, reservations, failingRefunds, audit);
+
+        assertThrows(
+            IllegalStateException.class,
+            () -> cancel("R1", "取消理由", TODAY, "M001")
+        );
+
+        assertEquals(TransferStatus.PAID, reservation.status());
+        assertEquals(7, remainingSeats());
+        assertEquals(0, audit.entries().size());
+    }
+
+    @Test
+    @DisplayName("操作ログに失敗したら返金待ち・予約・残席を取り消し前に戻す")
+    void rollsBackWhenAuditRecordingFails() {
+        Reservation reservation = reserve("R1", "M001");
+        service.recordPayment("R1");
+        CancellationAuditRepository failingAudit = new CancellationAuditRepository() {
+            @Override
+            public void record(CancellationAudit entry) {
+                throw new IllegalStateException("操作ログを記録できません");
+            }
+
+            @Override
+            public void remove(CancellationAudit entry) {
+            }
+        };
+        service = new ReservationService(tours, reservations, refunds, failingAudit);
+
+        assertThrows(
+            IllegalStateException.class,
+            () -> cancel("R1", "取消理由", TODAY, "M001")
+        );
+
+        assertEquals(TransferStatus.PAID, reservation.status());
+        assertEquals(7, remainingSeats());
+        assertEquals(0, refunds.entries().size());
     }
 
     @Test
@@ -221,12 +285,19 @@ class ReservationCancellationTest {
                 Reservation value,
                 long expectedVersion,
                 LocalDate cancelDate,
-                String cancelReason
+                String cancelReason,
+                Runnable saveRelatedRecords
             ) {
                 if (attempts++ == 0) {
                     value.markPaid(expectedVersion, DEPARTURE.minusDays(20), Money.yen(75_000), false);
                 }
-                return ReservationRepository.super.saveCancellation(value, expectedVersion, cancelDate, cancelReason);
+                return ReservationRepository.super.saveCancellation(
+                    value,
+                    expectedVersion,
+                    cancelDate,
+                    cancelReason,
+                    saveRelatedRecords
+                );
             }
         };
         service = new ReservationService(tours, racingReservations, refunds, audit);
