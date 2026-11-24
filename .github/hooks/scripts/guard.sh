@@ -46,6 +46,11 @@ esac
 paths=()
 if [ "$is_write_tool" -eq 1 ]; then
   while IFS= read -r p; do paths+=("$p"); done < <(jq -r '[.. | objects | to_entries[] | select(.key | test("^(path|file_path|filePath|target|file)$")) | .value | strings] | .[]' <<< "$args")
+  # apply_patch はパスを引数の項目ではなくパッチの本文に持つ（*** Update File: パス、+++ b/パス など）
+  while IFS= read -r p; do [ -n "$p" ] && paths+=("$p"); done < <(
+    jq -r '[.. | strings] | .[]' <<< "$args" \
+      | sed -nE 's/^\*\*\* (Add|Update|Delete) File: (.*)$/\2/p; s/^\*\*\* Move to: (.*)$/\1/p; s/^(\+\+\+|---) [ab]\/(.*)$/\2/p' \
+      | sed -E 's/[[:space:]]+$//')
 elif [ -n "$cmd" ]; then
   # シェル経由の書き込み（リダイレクト・sed -i・mv・rm・tee）だけを見る
   if grep -qE '(>|sed[[:space:]]+-i|[[:space:]]mv[[:space:]]|^mv[[:space:]]|[[:space:]]rm[[:space:]]|^rm[[:space:]]|tee[[:space:]])' <<< "$cmd"; then
