@@ -21,6 +21,7 @@
 /scripts/lint/common/               @your-org/standards-team
 /scripts/lint/tests/                @your-org/standards-team
 /scripts/design/                    @your-org/standards-team
+/scripts/report/                    @your-org/standards-team
 
 # --- 業務の正本（社員）---
 /docs/requirements/                 @your-org/business-team

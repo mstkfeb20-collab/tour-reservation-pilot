@@ -16,11 +16,18 @@ description: 要件（REQ-xxx）からテストを作るときに使う。実装
    - 禁止事項（してはいけない遷移や入力が拒否される）
 3. `docs/domain/invariants.md` に関係する不変条件があれば、それを破る入力が拒否されるテストも作る。
 4. テストクラスに要件IDを付ける。
+5. 要件ファイルの「テスト仕様」の行から作ったテストには、その行の行ID（`S-26-xxx/D-xxxxx/n`）も付ける。1本のテストが複数の行を確かめるなら、行IDを複数付ける。PR のレポートが、テスト仕様の行ごとにテストがあるかを数える。
 
 ```java
 @Tag("REQ-003")
-@DisplayName("REQ-003 取消料は1円未満を切り捨てる")
-class MoneyTest { ... }
+@DisplayName("REQ-003 取消料と返金額")
+class CancellationFeeTest {
+
+    @Test
+    @Tag("S-26-002/D-15003/2")
+    @DisplayName("取消料の1円未満は切り捨てる")
+    void roundsDownBelowOneYen() { ... }
+}
 ```
 
 ## ルール
@@ -29,3 +36,4 @@ class MoneyTest { ... }
 - `@DisplayName` は日本語で、業務の言葉で書く。用語は `docs/domain/glossary.md` に合わせる。
 - 要件IDの付け忘れや、存在しない要件IDは `scripts/lint/common/requirement-traceability.sh` が検出する。
 - 完了条件があいまいでテストにできない場合は、テストを推測で作らず、PRの説明に質問として書く。
+- テスト仕様の行のうち自動テストにしないもの（実機での受信確認など）は、PR の本文に「未対応: 行ID（理由）」の行で書く。

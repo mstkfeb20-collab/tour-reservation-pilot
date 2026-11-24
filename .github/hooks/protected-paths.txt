@@ -17,6 +17,7 @@ docs/design/ID設計.xlsx
 docs/design/ID設計.md
 scripts/lint/tests/*
 scripts/design/*
+scripts/report/*
 #
 # --- 業務の正本（社員が管理）---
 docs/requirements/*

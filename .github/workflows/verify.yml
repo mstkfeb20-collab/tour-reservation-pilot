@@ -48,6 +48,8 @@ jobs:
         run: bash scripts/lint/tests/test-ddl-comments.sh
       - name: Lint の自己テスト（要件とテストの対応）
         run: bash scripts/lint/tests/test-requirement-traceability.sh
+      - name: レポートの自己テスト
+        run: bash scripts/lint/tests/test-report.sh
 
   build:
     name: ビルドとテスト
@@ -61,3 +63,47 @@ jobs:
           cache: maven
       - name: mvn verify（単体テスト・ArchUnit）
         run: mvn -B verify
+      - name: テストの結果を残す（PR レポートが読む）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+
+  report:
+    name: PR レポート
+    # PR に、対象要件のテスト仕様の行・作業一覧の未対応・テストと Lint の結果をコメントする（scripts/report/report.py）
+    if: always() && github.event_name == 'pull_request'
+    needs: [harness, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: surefire-reports
+          path: surefire-reports
+        continue-on-error: true
+      - name: レポートを作ってコメントする
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: origin/${{ github.base_ref }}
+          LINT: ${{ needs.harness.result == 'success' && 'ok' || 'ng' }}
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq .body > pr-body.md
+          python3 scripts/report/report.py pr --base "$BASE_REF" --body-file pr-body.md --surefire surefire-reports --lint "$LINT" > report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          # 同じコメントを更新する（PR に何度も足さない）
+          { echo '<!-- tazuna:pr-report -->'; cat report.md; } > comment.md
+          id=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" --paginate --jq '.[] | select(.body | startswith("<!-- tazuna:pr-report -->")) | .id' | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$id" -F body=@comment.md > /dev/null
+          else
+            gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" -F body=@comment.md > /dev/null
+          fi

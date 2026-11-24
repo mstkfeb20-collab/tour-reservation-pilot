@@ -1,0 +1,51 @@
+# 日次レポート。統合ブランチ（develop など）の1日の動きを、ブランチごとの issue「日次レポート（ブランチ名）」にコメントする。
+# 対象のブランチは、リポジトリの変数 TAZUNA_REPORT_BRANCHES（空白区切り。既定は develop）で決める。
+# main を商用リリース版にする運用では、main は対象にしない。どのブランチもなければ、既定のブランチで作る。
+name: 日次レポート
+
+on:
+  schedule:
+    - cron: '31 23 * * 0-4'   # 平日の朝 8:31（日本時間）
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: 対象のブランチ（空白区切り。空なら TAZUNA_REPORT_BRANCHES）
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: レポートを作ってコメントする
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCHES: ${{ github.event.inputs.branches || vars.TAZUNA_REPORT_BRANCHES || 'develop' }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          targets=""
+          for b in $BRANCHES; do
+            if git rev-parse -q --verify "origin/$b" > /dev/null; then targets="$targets $b"
+            else echo "- ブランチ $b がないので飛ばしました" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+          if [ -z "$targets" ]; then
+            targets="$DEFAULT_BRANCH"
+            echo "- 対象のブランチがないので、既定のブランチ $DEFAULT_BRANCH で作ります" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          for b in $targets; do
+            git checkout -q --detach "origin/$b"
+            python3 scripts/report/report.py daily --branch "origin/$b" --since "24 hours ago" | sed "1s#origin/##" > report.md
+            cat report.md >> "$GITHUB_STEP_SUMMARY"
+            title="日次レポート（$b）"
+            n=$(gh api "repos/${{ github.repository }}/issues?state=open&per_page=100" --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+            if [ -z "$n" ]; then
+              n=$(gh api "repos/${{ github.repository }}/issues" -f title="$title" -f body="ブランチ $b の日次レポートを、このissueに1日1回コメントします（.github/workflows/tazuna-report.yml）。" --jq .number)
+            fi
+            gh api "repos/${{ github.repository }}/issues/$n/comments" -F body=@report.md > /dev/null
+          done

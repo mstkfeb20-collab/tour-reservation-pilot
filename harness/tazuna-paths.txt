@@ -20,4 +20,6 @@ docs/design/ID設計.xlsx
 docs/design/ID設計.md
 scripts/lint/tests/*
 scripts/design/*
+scripts/report/*
+.github/workflows/tazuna-report.yml
 harness/tazuna-paths.txt
