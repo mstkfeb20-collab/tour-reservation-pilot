@@ -81,17 +81,31 @@ def local_state():
                           "python3 scripts/design/id_design.py scaffold"))
     lack = sorted(i for i, (_, st) in states.items() if st in ("未着手", "必須不足") and i in files)
     if lack:
-        detail = []
-        for i in lack[:8]:
+        # 機能の書類で先に決めている設計項目（共通の方針がないまま、機能ごとに決め始めている）
+        used = {}
+        for i, name in files.items():
+            if cat.function_of(i):
+                _, lines, _ = catalog.parse_design(report.read(os.path.join(DESIGN, name)))
+                for _, n, t, u in lines:
+                    if n and u and not t.startswith("（廃止）"):
+                        used.setdefault(u, set()).add(i)
+        rows = []
+        for i in lack:
             _, lines, na = catalog.parse_design(report.read(os.path.join(DESIGN, files[i])))
             written = {u for _, n, t, u in lines if n and not t.startswith("（廃止）")}
             need = [x for x, rec in cat.records.get(cat.instances[i]["書類ID"], {}).items()
                     if rec["記載"] == "必須" and x not in written | na]
-            detail.append(f"{i} {cat.instances[i]['名前']}（必須の見出し {len(need)} 件が空: "
-                          + "、".join(f"{x} {cat.items[x]['設計項目']}" for x in need[:3]) + ("…" if len(need) > 3 else "") + "）")
+            early = [x for x in need if not cat.function_of(i) and used.get(x)]
+            names = [f"{x} {cat.items[x]['設計項目']}" + (f"（★ {'・'.join(sorted(used[x]))} が先に決めている）" if x in early else "")
+                     for x in need]
+            rows.append((0 if early else 1, i, f"{i} {cat.instances[i]['名前']}: " + "、".join(names)))
+        rows.sort()
+        first = [r for r in rows if r[0] == 0]
         todos.append(Todo(50, "社員", f"必須の見出しが空の設計書を書く（{len(lack)} 件）",
-                          "必須の見出しが埋まるまで、その書類は「完了」になりません。書かないと決めた見出しは「該当なし（理由）」と書く",
-                          "\n".join(detail) + ("\n…" if len(lack) > 8 else "")))
+                          "必須の見出しが埋まるまで、その書類は「完了」になりません。書かないと決めた見出しは「該当なし（理由）」と書く。"
+                          + (f"★ の見出しは、共通の方針がないまま機能の設計書で先に決めているので、先に共通の方針を決める（{len(first)} 件の書類）"
+                             if first else ""),
+                          "\n".join(r[2] for r in rows)))
 
     # 転記
     sys.path.insert(0, os.path.join(HERE, "..", "design"))
