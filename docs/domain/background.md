@@ -74,8 +74,21 @@
 - 新しいユースケースは ReservationService#reserve を手本にする（S-34-001/D-18007/1・手本とするコード）
 <!-- tazuna:design S-34-001 end -->
 
-<!-- tazuna:design S-20-001 begin src=3fd8a8d1d3c2（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-20-001 begin src=1d80c3a826fe（scripts/design/transcribe.py が作る。手で直さない） -->
 ## S-20-001 データモデル設計書：データモデル設計書
 
-- TOURINFO と MEMBER はマスタ、RESERVE と TRANSFER_IMPORT はトランザクション（S-20-001/D-05014/1・マスタとトランザクションの区別）
+- TOURINFO と MEMBER はマスタ、RESERVE・TRANSFER_IMPORT・REFUND はトランザクション（S-20-001/D-05014/1・マスタとトランザクションの区別）
 <!-- tazuna:design S-20-001 end -->
+
+<!-- tazuna:design S-16-003 begin src=542836306ecc（scripts/design/transcribe.py が作る。手で直さない） -->
+## S-16-003 テーブル設計書：REFUND
+
+- 振込済の予約の取消のときだけ増える。年に数千件の見込み（S-16-003/D-05011/1・データ量・増加見込み）
+- トランザクション（S-16-003/D-05014/1・マスタとトランザクションの区別）
+<!-- tazuna:design S-16-003 end -->
+
+<!-- tazuna:design S-22-002 begin src=a408fb1addbb（scripts/design/transcribe.py が作る。手で直さない） -->
+## S-22-002 処理設計書：予約取消
+
+- お客様（会員）が自分の予約を、窓口担当がお客様から電話で受けた予約を取り消す（S-22-002/D-01002/1・処理の目的・利用者）
+<!-- tazuna:design S-22-002 end -->
