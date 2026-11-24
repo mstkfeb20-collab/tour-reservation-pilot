@@ -199,7 +199,12 @@ def check_registry(cat, reg_rel, files, docs):
 
 
 def removed_ids(folder, base, current):
+    """この変更で消えた行ID。base そのものではなく、base と今の分かれ目（merge-base）と比べる。
+    分かれた後に base 側で足された行は、この変更が消したのではないので数えない"""
     rel = os.path.relpath(folder, ROOT)
+    mb = subprocess.run(["git", "-C", ROOT, "merge-base", "HEAD", base], capture_output=True, text=True)
+    if mb.returncode == 0 and mb.stdout.strip():
+        base = mb.stdout.strip()
     try:
         names = subprocess.run(["git", "-C", ROOT, "ls-tree", "-z", "--name-only", f"{base}:{rel}"],
                                capture_output=True, text=True, check=True).stdout.split("\0")

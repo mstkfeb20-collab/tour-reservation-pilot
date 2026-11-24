@@ -103,6 +103,14 @@ if [ "$rc" -ne 0 ] && grep -qF "S-21-002/D-02002/2 が HEAD から消えてい�
 printf '%s' "${good/備考: テキストエリア、最大80文字/（廃止）備考の80文字の制限は要件から外れた}" > "$repo/docs/design/S-21-002_予約入力.md"
 out=$(TAZUNA_ROOT="$repo" python3 "$PY" "$repo/docs/design" --base HEAD 2>&1); rc=$?
 if [ "$rc" -eq 0 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: 廃止にした行は通る"; echo "$out" | head -5; fi
+# base 側で分かれた後に足された行は、この変更が消したことにしない（PR のブランチが main より古いとき）
+g() { git -C "$repo" -c user.email=t@t -c user.name=t "$@"; }
+g add -A; g commit -qm feature-start
+main=$(g branch --show-current); g branch -q feature
+printf '%s\n- [3] 後から main で足した行\n' "$(cat "$repo/docs/design/S-21-002_予約入力.md")" > "$repo/docs/design/S-21-002_予約入力.md"
+g commit -qam main-added; g checkout -q feature
+out=$(TAZUNA_ROOT="$repo" python3 "$PY" "$repo/docs/design" --base "$main" 2>&1); rc=$?
+if [ "$rc" -eq 0 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: 分かれた後に base で足した行は消えたことにしない"; echo "$out" | head -5; fi
 rm -rf "$repo"
 
 case_ "行に図を付けられる（図の中の - や ## は行・見出しにしない）" ok "S-21-002_予約入力.md" '# S-21-002 画面設計書：予約入力

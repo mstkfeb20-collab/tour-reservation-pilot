@@ -54,7 +54,7 @@
 - J110 は S1 受信確認・S2 形式検査・S3 消込・S4 リスト出力・S5 退避 の5ステップ（S-23-001/D-08001/1・ジョブ一覧・ジョブネット）
 <!-- tazuna:design S-23-001 end -->
 
-<!-- tazuna:design S-24-001 begin src=f1f51cb85244（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-24-001 begin src=49a2ee82f579（scripts/design/transcribe.py が作る。手で直さない） -->
 ## S-24-001 IF定義書：IF-11振込入金通知ファイル
 
 - 全銀協の振込入金通知フォーマットと、取引銀行の「ファイル伝送サービス利用要領」を正とする（S-24-001/D-07013/1・相手システムの仕様書）
