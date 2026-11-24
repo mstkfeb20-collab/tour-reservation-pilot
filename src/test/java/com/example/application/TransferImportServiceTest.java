@@ -130,7 +130,7 @@ class TransferImportServiceTest {
         Reservation paid = reserve("R000000000001");
         paid.markPaid();
         Reservation cancelled = reserve("R000000000002");
-        cancelled.cancel();
+        cancelled.cancel(ACCOUNT_DATE, "取消");
 
         TransferImportOutcome outcome = service.importFile(file(
             detail("000001", 10_000, paid.reserveNo(), "", "0"),
@@ -204,7 +204,7 @@ class TransferImportServiceTest {
 
             @Override
             public boolean saveSettlement(Reservation value, long expectedVersion, boolean latePayment, TransferImportRecord record) {
-                reservation.cancel();
+                reservation.cancel(ACCOUNT_DATE, "取消");
                 return false;
             }
 
