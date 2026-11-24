@@ -166,7 +166,7 @@ def pr_report(base, body, surefire_dir=None, lint=None):
     targets = [r for line in body_lines(body, "対象要件") for r in REQ_RE.findall(line)]
     skipped = {}
     for line in body_lines(body, "未対応"):
-        for lid in LID_RE.findall(line):
+        for lid in LID_RE.findall(line) + re.findall(r"S-\d{2}-\d{3}/D-\d{5}(?![/\d])", line):
             reason = re.sub(rf"^.*?{re.escape(lid)}", "", line).strip(" 　（）()")
             skipped[lid] = reason or "（理由なし）"
     out = ["## tazuna の PR レポート", ""]
@@ -213,7 +213,21 @@ def pr_report(base, body, surefire_dir=None, lint=None):
                     f"この機能の作業 {len(mine)} 行のうち、未対応と書いたもの {len(listed)} 行（ほかは対応したものとして扱う）", ""]
             out += [f"- 未対応 {lid}: {skipped[lid]}" for lid in listed]
             out.append("")
-        unknown = [lid for lid in skipped if lid not in {l for l, _, _ in mine} and lid not in {l for f in files for l, _ in specs.get(f, [])}]
+        # ★ この機能の書類が先に決めている、共通の書類の空の必須見出し
+        import gaps
+        mystars = [(i, item, name) for i, item, name, users in gaps.stars(folder, cat)
+                   if any(cat.function_of(u) in funcs for u, _ in users)]
+        if mystars:
+            keys = [f"{i}/{item}" for i, item, _ in mystars]
+            out += ["### ★ この機能が先に決めている共通の見出し", "",
+                    f"共通の書類の必須の見出しが空のまま、この機能の書類が先に決めているもの {len(mystars)} 件のうち、"
+                    f"**扱いが書かれていない {sum(1 for k in keys if k not in skipped)} 件**"
+                    "（設計書に共通の方針・機能に任せる旨・該当なし（理由）を書けば消える。今は直さないなら本文に「未対応: S-xx-nnn/D-xxxxx（理由）」）", ""]
+            for (i, item, name), k in zip(mystars, keys):
+                out.append(f"- 未対応 {k} {name}: {skipped[k]}" if k in skipped else f"- [ ] {k} {name}")
+            out.append("")
+        unknown = [lid for lid in skipped if lid not in {l for l, _, _ in mine} and lid not in {l for f in files for l, _ in specs.get(f, [])}
+                   and lid not in {f"{i}/{item}" for i, item, _ in mystars}]
         if unknown:
             out += ["未対応に書いたが、この機能の作業・テスト仕様にない行: " + ", ".join(unknown), ""]
 

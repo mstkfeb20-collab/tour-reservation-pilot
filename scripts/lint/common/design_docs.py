@@ -152,6 +152,7 @@ def main():
                 warn(rel, f"必須の記載項目 {iid} {r['設計項目']} の見出しがありません")
 
     check_registry(cat, reg_rel, files, docs)
+    check_gaps(cat, folder)
 
     for where, inst, (ri, item, num) in pending:
         target = catalog.line_id(ri or inst, item, num)
@@ -166,6 +167,26 @@ def main():
                   "行IDはチケットや転記先から参照されます。消すと参照が切れます",
                   "行を消さずに、本文を「（廃止）理由」や「（廃止）→ 移した先の行ID」にしてください")
     return 1 if errors else 0
+
+
+def check_gaps(cat, folder):
+    """★（共通の必須の見出しが空なのに、機能の書類が同じ設計項目を決めている）は警告。行が指すファイルがなければエラー"""
+    import gaps
+    w = gaps.written(folder, cat)
+    files = catalog.design_files(folder)
+    for inst, item, name, users in gaps.stars(folder, cat, w):
+        rel = os.path.relpath(os.path.join(folder, files[inst]), ROOT)
+        warn(rel, f"★ {item} {name} が空なのに、機能の書類（{'、'.join(sorted({u for u, _ in users}))}）が先に決めています。"
+                  "共通の方針・機能に任せる旨・該当なし（理由）のどれかを書いてください")
+    for lid, path, level in gaps.missing_refs(ROOT, folder, cat, w):
+        inst = lid.split("/")[0]
+        rel = os.path.relpath(os.path.join(folder, files[inst]), ROOT) if inst in files else lid
+        if level == "error":
+            error(f"{rel}（{lid}）", f"行が指すファイル {path} がありません",
+                  "読む人やエージェントが、存在しない資料を探すことになります",
+                  "正しいパスに直してください（転記で作られる要件・作業一覧のファイルと、書類一覧のテーブルの DDL はまだなくてもよい）")
+        else:
+            warn(rel, f"{lid} が指す {path} がまだありません")
 
 
 def check_registry(cat, reg_rel, files, docs):
