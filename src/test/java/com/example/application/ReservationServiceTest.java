@@ -4,6 +4,8 @@ import com.example.domain.Money;
 import com.example.domain.Reservation;
 import com.example.domain.Tour;
 import com.example.domain.TransferStatus;
+import com.example.infrastructure.InMemoryCancellationAuditRepository;
+import com.example.infrastructure.InMemoryRefundRepository;
 import com.example.infrastructure.InMemoryReservationRepository;
 import com.example.infrastructure.InMemoryTourRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,7 +30,12 @@ class ReservationServiceTest {
     void setUp() {
         tours = new InMemoryTourRepository();
         tours.save(new Tour("T001", "春の京都 2日間", DEPARTURE, Money.yen(30_000), Money.yen(15_000), 10));
-        service = new ReservationService(tours, new InMemoryReservationRepository());
+        service = new ReservationService(
+            tours,
+            new InMemoryReservationRepository(),
+            new InMemoryRefundRepository(),
+            new InMemoryCancellationAuditRepository()
+        );
     }
 
     int remainingSeats() {
@@ -100,23 +107,32 @@ class ReservationServiceTest {
         @Test
         @DisplayName("出発日の前日なら取り消せ、残席が戻る")
         void dayBefore() {
-            service.cancel("R1", DEPARTURE.minusDays(1));
+            cancel("R1", DEPARTURE.minusDays(1));
             assertEquals(10, remainingSeats());
         }
 
         @Test
         @DisplayName("出発日の当日は取り消せず、残席も変わらない")
         void departureDay() {
-            assertThrows(IllegalStateException.class, () -> service.cancel("R1", DEPARTURE));
+            assertThrows(IllegalStateException.class, () -> cancel("R1", DEPARTURE));
             assertEquals(7, remainingSeats());
         }
 
         @Test
         @DisplayName("取り消し済みの予約は再度取り消せない（残席が二重に戻らない）")
         void twice() {
-            service.cancel("R1", DEPARTURE.minusDays(10));
-            assertThrows(IllegalStateException.class, () -> service.cancel("R1", DEPARTURE.minusDays(10)));
+            cancel("R1", DEPARTURE.minusDays(10));
+            assertThrows(IllegalStateException.class, () -> cancel("R1", DEPARTURE.minusDays(10)));
             assertEquals(10, remainingSeats());
+        }
+
+        private ReservationService.CancelResult cancel(String reserveNo, LocalDate today) {
+            return service.cancel(
+                reserveNo,
+                "予約者都合",
+                today,
+                ReservationService.CancellationActor.counterStaff("E001")
+            );
         }
     }
 
@@ -129,7 +145,12 @@ class ReservationServiceTest {
         ReservationService.CancelResult cancelPaid(int days) {
             service.reserve("R1", "T001", 2, 1, "", DEPARTURE.minusDays(30));
             service.recordPayment("R1");
-            return service.cancel("R1", DEPARTURE.minusDays(days));
+            return service.cancel(
+                "R1",
+                "予約者都合",
+                DEPARTURE.minusDays(days),
+                ReservationService.CancellationActor.counterStaff("E001")
+            );
         }
 
         @Test
@@ -176,7 +197,12 @@ class ReservationServiceTest {
         @DisplayName("未振込の予約は取消料を請求しない")
         void unpaid() {
             service.reserve("R1", "T001", 2, 1, "", DEPARTURE.minusDays(30));
-            ReservationService.CancelResult result = service.cancel("R1", DEPARTURE.minusDays(1));
+            ReservationService.CancelResult result = service.cancel(
+                "R1",
+                "予約者都合",
+                DEPARTURE.minusDays(1),
+                ReservationService.CancellationActor.counterStaff("E001")
+            );
             assertEquals(Money.zero(), result.fee());
             assertEquals(Money.zero(), result.refund());
         }

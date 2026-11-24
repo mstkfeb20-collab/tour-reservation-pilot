@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 
+import java.time.LocalDate;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -23,7 +25,7 @@ class ReservationTest {
     void forward() {
         Reservation r = newReservation();
         r.markPaid();
-        r.cancel();
+        r.cancel(LocalDate.of(2026, 4, 1), "取消");
         assertEquals(TransferStatus.CANCELLED, r.status());
     }
 
@@ -31,7 +33,7 @@ class ReservationTest {
     @DisplayName("取消から振込済には戻せない")
     void cancelledIsTerminal() {
         Reservation r = newReservation();
-        r.cancel();
+        r.cancel(LocalDate.of(2026, 4, 1), "取消");
         assertThrows(IllegalStateException.class, r::markPaid);
     }
 

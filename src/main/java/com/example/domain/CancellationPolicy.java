@@ -47,11 +47,11 @@ public final class CancellationPolicy {
         return reservation.sumPrice().percent(rate(daysBeforeDeparture));
     }
 
-    /** 返金額 = 振込額 − 取消料。振込済の予約は合計金額を全額振り込んでいるものとする。0円を下回らない（INV-004）。 */
+    /** 返金額 = 振込額 − 取消料。0円を下回らない（INV-004）。 */
     public static Money refund(Reservation reservation, long daysBeforeDeparture) {
         if (reservation.status() != TransferStatus.PAID) {
             return Money.zero();
         }
-        return reservation.sumPrice().minusOrZero(fee(reservation, daysBeforeDeparture));
+        return reservation.paidAmount().minusOrZero(fee(reservation, daysBeforeDeparture));
     }
 }
