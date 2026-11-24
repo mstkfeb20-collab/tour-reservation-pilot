@@ -9,6 +9,12 @@ run() { TAZUNA_ROOT="$w" python3 "$PY" "$@" 2>&1; }
 mkdir -p "$w/docs/design" "$w/docs/requirements" "$w/src/test"
 
 python3 "$SNAP" "$w/docs/design/ID設計.md"
+# 案件のリポジトリでは機能一覧が書いてあるので、空にしてから始める
+python3 - "$w/docs/design/ID設計.md" "$ROOT" <<'EOF2'
+import sys
+sys.path.insert(0, sys.argv[2] + "/scripts/design"); import catalog
+d = catalog.read_snapshot(sys.argv[1]); d["機能一覧"] = []; catalog.write_snapshot(d, sys.argv[1])
+EOF2
 check "機能一覧が空なら、機能一覧を書く" "**機能一覧を書く**（社員）" "$(run --local)"
 
 python3 - "$w/docs/design/ID設計.md" "$ROOT" <<'EOF'
