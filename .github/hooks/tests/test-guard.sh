@@ -53,6 +53,7 @@ expect deny  "apply_patch での要件の編集を止める" "$(patch_of $'*** B
 expect deny  "apply_patch で保護ファイルへ移すのを止める" "$(patch_of $'*** Begin Patch\n*** Update File: src/main/java/A.java\n*** Move to: docs/domain/invariants.md\n*** End Patch')"
 expect deny  "apply_patch（unified diff）でも止める" "$(patch_of $'--- a/scripts/lint/common/skill-naming.sh\n+++ b/scripts/lint/common/skill-naming.sh\n@@ -1 +1 @@\n-a\n+b')"
 expect deny  "toolArgs が文字列の apply_patch でも止める" "$(jq -cn --arg p $'*** Begin Patch\n*** Add File: docs/requirements/x.md\n+a\n*** End Patch' '{toolName: "apply_patch", toolArgs: ({input: $p} | tostring)}')"
+expect deny  "toolArgs がパッチ本文そのもの（JSON でない）でも止める" "$(jq -cn --arg p $'*** Begin Patch\n*** Update File: docs/requirements/README.md\n@@\n-a\n+b\n*** End Patch' '{toolName: "apply_patch", toolArgs: $p}')"
 expect allow "apply_patch でのプロダクトコードの編集は通す" "$(patch_of $'*** Begin Patch\n*** Update File: src/main/java/com/example/domain/Money.java\n@@\n-a\n+b\n*** End Patch')"
 expect allow "保護ファイルの閲覧は通す"      "$(bash_cmd 'cat docs/domain/invariants.md')"
 

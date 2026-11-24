@@ -20,7 +20,14 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 tool=$(jq -r '.toolName // .tool_name // ""' <<< "$payload")
 # toolArgs は JSON 文字列のこともあるので、オブジェクトにそろえる
-args=$(jq -c '(.toolArgs // .tool_input // {}) | if type == "string" then (try fromjson catch {}) else . end' <<< "$payload")
+# JSON でない文字列（apply_patch のパッチ本文そのものなど）は {input: 文字列} として扱う
+args=$(jq -c '(.toolArgs // .tool_input // {}) | if type == "string" then (try fromjson catch {input: .}) else . end' <<< "$payload")
+
+# 調べるとき: .git/tazuna-hook-debug を置くと、受け取った内容を .git/tazuna-hook-payloads.log に残す（コミットされない）
+GIT_DIR_PATH="$(git rev-parse --git-dir 2>/dev/null || true)"
+if [ -n "$GIT_DIR_PATH" ] && [ -f "$GIT_DIR_PATH/tazuna-hook-debug" ]; then
+  printf '%s\n' "$payload" >> "$GIT_DIR_PATH/tazuna-hook-payloads.log"
+fi
 
 # --- 1. コマンドの確認 ---
 cmd=$(jq -r '.command // .cmd // .script // empty' <<< "$args")
@@ -48,7 +55,7 @@ if [ "$is_write_tool" -eq 1 ]; then
   while IFS= read -r p; do paths+=("$p"); done < <(jq -r '[.. | objects | to_entries[] | select(.key | test("^(path|file_path|filePath|target|file)$")) | .value | strings] | .[]' <<< "$args")
   # apply_patch はパスを引数の項目ではなくパッチの本文に持つ（*** Update File: パス、+++ b/パス など）
   while IFS= read -r p; do [ -n "$p" ] && paths+=("$p"); done < <(
-    jq -r '[.. | strings] | .[]' <<< "$args" \
+    { jq -r '[.. | strings] | .[]' <<< "$args"; jq -r '[.. | strings] | .[]' <<< "$payload"; } \
       | sed -nE 's/^\*\*\* (Add|Update|Delete) File: (.*)$/\2/p; s/^\*\*\* Move to: (.*)$/\1/p; s/^(\+\+\+|---) [ab]\/(.*)$/\2/p' \
       | sed -E 's/[[:space:]]+$//')
 elif [ -n "$cmd" ]; then
