@@ -63,5 +63,15 @@ expect deny  "Copilot の実際の apply_patch の形でも止める" "$(jq -cn 
 " --arg cwd "$PWD" '{sessionId: "x", cwd: $cwd, toolName: "apply_patch", toolArgs: $p}')"
 expect allow "apply_patch でのプロダクトコードの編集は通す" "$(patch_of $'*** Begin Patch\n*** Update File: src/main/java/com/example/domain/Money.java\n@@\n-a\n+b\n*** End Patch')"
 expect allow "保護ファイルの閲覧は通す"      "$(bash_cmd 'cat docs/domain/invariants.md')"
+# 読むだけ・実行するだけのコマンドは、保護されたパスを含んでいても通す（2>&1 などのリダイレクトがあっても）
+expect allow "保護されたスクリプトの実行は通す（2>&1 付き）" "$(bash_cmd 'python3 scripts/report/next.py --local 2>&1')"
+expect allow "保護されたスクリプトの実行は通す（出力を別のファイルへ）" "$(bash_cmd 'python3 scripts/report/next.py > /tmp/next.txt')"
+expect allow "保護ファイルを読んでパイプで流すのは通す" "$(bash_cmd 'cat docs/domain/invariants.md | grep INV 2>/dev/null')"
+expect deny  "保護ファイルへのリダイレクトは止める"    "$(bash_cmd 'python3 scripts/report/next.py > docs/requirements/x.md')"
+expect deny  "保護ファイルへの追記は止める"            "$(bash_cmd 'echo x >>docs/domain/invariants.md')"
+expect deny  "&& の後ろの書き換えも止める"            "$(bash_cmd 'ls && rm docs/domain/invariants.md')"
+expect deny  "保護ファイルへの cp は止める"            "$(bash_cmd 'cp /tmp/a.md docs/requirements/a.md')"
+expect deny  "tee で保護ファイルへ書くのは止める"      "$(bash_cmd 'echo x | tee -a docs/domain/invariants.md')"
+expect allow "保護ファイルを外へ cp するのは通す（読むだけ）" "$(bash_cmd 'cp docs/domain/invariants.md /tmp/x.md')"
 
 exit $fail

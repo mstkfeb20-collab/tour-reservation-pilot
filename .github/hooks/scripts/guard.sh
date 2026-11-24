@@ -59,10 +59,39 @@ if [ "$is_write_tool" -eq 1 ]; then
       | sed -nE 's/^\*\*\* (Add|Update|Delete) File: (.*)$/\2/p; s/^\*\*\* Move to: (.*)$/\1/p; s/^(\+\+\+|---) [ab]\/(.*)$/\2/p' \
       | sed -E 's/[[:space:]]+$//')
 elif [ -n "$cmd" ]; then
-  # シェル経由の書き込み（リダイレクト・sed -i・mv・rm・tee）だけを見る
-  if grep -qE '(>|sed[[:space:]]+-i|[[:space:]]mv[[:space:]]|^mv[[:space:]]|[[:space:]]rm[[:space:]]|^rm[[:space:]]|tee[[:space:]])' <<< "$cmd"; then
-    while IFS= read -r p; do paths+=("$p"); done < <(grep -oE '[A-Za-z0-9_./*-]+' <<< "$cmd")
-  fi
+  # シェル経由の書き込みだけを見る。書き込み先になる語だけを取り出す（読むだけ・実行するだけのコマンドは止めない）
+  #   - リダイレクトの先（> ファイル、>> ファイル。2>&1 や /dev/null は除く）
+  #   - 書き換えるコマンド（rm・mv・cp・tee・touch・truncate・sed -i・perl -i）の後ろの引数
+  # コマンドは ; && || | で区切った1つずつで見る
+  while IFS= read -r seg; do
+    while IFS= read -r t; do
+      [[ -n "$t" && "$t" != /dev/* ]] && paths+=("$t")
+    done < <(grep -oE '[0-9]*>>?[[:space:]]*[^[:space:]&;|<>]+' <<< "$seg" | sed -E 's/^[0-9]*>>?[[:space:]]*//')
+    read -r -a words <<< "$seg"
+    i=0
+    while [[ $i -lt ${#words[@]} && "${words[$i]}" == *=* ]]; do i=$((i + 1)); done  # 先頭の VAR=値 を飛ばす
+    [[ "${words[$i]:-}" == sudo ]] && i=$((i + 1))
+    verb="${words[$i]:-}"
+    writes=0
+    case "$verb" in
+      rm|mv|cp|tee|touch|truncate|install) writes=1 ;;
+      sed|perl) [[ " ${words[*]} " =~ [[:space:]]-i ]] && writes=1 ;;
+    esac
+    if [[ $writes -eq 1 ]]; then
+      args_=()
+      for ((j = i + 1; j < ${#words[@]}; j++)); do
+        w="${words[$j]}"
+        [[ "$w" == -* || "$w" == *'>'* ]] && continue
+        args_+=("${w//[\'\"]/}")
+      done
+      # cp・install は最後の引数（書き込み先）だけ。読み元は書き換えない
+      if [[ "$verb" == cp || "$verb" == install ]]; then
+        [[ ${#args_[@]} -gt 0 ]] && paths+=("${args_[-1]}")
+      else
+        paths+=("${args_[@]}")
+      fi
+    fi
+  done < <(sed -E 's/(\&\&|\|\||;|\|)/\n/g' <<< "$cmd")
 fi
 
 for raw in "${paths[@]}"; do
