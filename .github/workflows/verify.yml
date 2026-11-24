@@ -50,6 +50,8 @@ jobs:
         run: bash scripts/lint/tests/test-requirement-traceability.sh
       - name: レポートの自己テスト
         run: bash scripts/lint/tests/test-report.sh
+      - name: 案内役の自己テスト
+        run: bash scripts/lint/tests/test-next.sh
 
   build:
     name: ビルドとテスト

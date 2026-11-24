@@ -18,6 +18,7 @@
 ## 参照先
 | 知りたいこと | 場所 |
 | --- | --- |
+| 次に何をするか（人への案内） | `.github/skills/base-navigator/`（`python3 scripts/report/next.py`） |
 | 作業の進め方 | `.github/skills/base-task-workflow/` |
 | テストの作り方 | `.github/skills/base-test-design/` |
 | 既存の設計書から業務ルールを抽出 | `.github/skills/base-spec-extraction/` |
