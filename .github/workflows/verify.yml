@@ -52,6 +52,8 @@ jobs:
         run: bash scripts/lint/tests/test-report.sh
       - name: 案内役の自己テスト
         run: bash scripts/lint/tests/test-next.sh
+      - name: 設計書レビューの材料の自己テスト
+        run: bash scripts/lint/tests/test-review-pack.sh
 
   build:
     name: ビルドとテスト

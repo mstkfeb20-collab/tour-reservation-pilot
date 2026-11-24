@@ -23,6 +23,7 @@
 | テストの作り方 | `.github/skills/base-test-design/` |
 | 既存の設計書から業務ルールを抽出 | `.github/skills/base-spec-extraction/` |
 | ID 設計書の置き場所と属性の例外を確認 | `.github/skills/base-design-check/` |
+| ID 設計書のレビュー（食い違い・未定義・抜け） | `.github/skills/base-design-review/`（`python3 scripts/design/review_pack.py`） |
 | 業務ルール・用語・機能一覧 | `docs/domain/` |
 | レイヤーと依存方向 | `docs/architecture.md` |
 | 命名・作法 | `docs/conventions.md` |
