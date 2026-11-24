@@ -54,6 +54,13 @@ expect deny  "apply_patch で保護ファイルへ移すのを止める" "$(patc
 expect deny  "apply_patch（unified diff）でも止める" "$(patch_of $'--- a/scripts/lint/common/skill-naming.sh\n+++ b/scripts/lint/common/skill-naming.sh\n@@ -1 +1 @@\n-a\n+b')"
 expect deny  "toolArgs が文字列の apply_patch でも止める" "$(jq -cn --arg p $'*** Begin Patch\n*** Add File: docs/requirements/x.md\n+a\n*** End Patch' '{toolName: "apply_patch", toolArgs: ({input: $p} | tostring)}')"
 expect deny  "toolArgs がパッチ本文そのもの（JSON でない）でも止める" "$(jq -cn --arg p $'*** Begin Patch\n*** Update File: docs/requirements/README.md\n@@\n-a\n+b\n*** End Patch' '{toolName: "apply_patch", toolArgs: $p}')"
+# GitHub 上の Copilot が実際に渡した形（パイロット PR #5 で記録）: toolArgs がパッチ本文の文字列、パスは絶対パス
+expect deny  "Copilot の実際の apply_patch の形でも止める" "$(jq -cn --arg p "*** Begin Patch
+*** Update File: $PWD/docs/requirements/S-22-001_振込データ取込.md
+@@
++- hooks の試験
+*** End Patch
+" --arg cwd "$PWD" '{sessionId: "x", cwd: $cwd, toolName: "apply_patch", toolArgs: $p}')"
 expect allow "apply_patch でのプロダクトコードの編集は通す" "$(patch_of $'*** Begin Patch\n*** Update File: src/main/java/com/example/domain/Money.java\n@@\n-a\n+b\n*** End Patch')"
 expect allow "保護ファイルの閲覧は通す"      "$(bash_cmd 'cat docs/domain/invariants.md')"
 
