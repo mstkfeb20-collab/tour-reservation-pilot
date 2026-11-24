@@ -136,5 +136,30 @@ flowchart LR
 ```
 ' "図や \`\`\` のブロックがどの行にも付いていません"
 
+case_ "行が指すファイルがなければ止める" ng "S-21-002_予約入力.md" '# S-21-002 画面設計書：予約入力
+
+## D-02002 画面項目定義
+
+- [1] 項目の意味は docs/requirements/transfer.md を読む
+' "行が指すファイル docs/requirements/transfer.md がありません"
+case_ "行が指すファイルがあれば通す" ok "S-21-002_予約入力.md" '# S-21-002 画面設計書：予約入力
+
+## D-02002 画面項目定義
+
+- [1] 命名は docs/conventions.md に合わせる
+'
+
+# ★: 共通の必須の見出しが空なのに、機能の書類が同じ設計項目を決めていれば警告する（止めない）
+d=$(mktemp -d)
+printf '# S-11-001 方式設計書：方式設計書\n\n## D-06001 トランザクション境界\n\n- [1] サービスのメソッド単位\n' > "$d/S-11-001_方式設計書.md"
+printf '# S-22-001 処理設計書：予約登録\n\n## D-06003 排他制御の方式\n\n- [1] 版番号で更新する\n' > "$d/S-22-001_予約登録.md"
+python3 "$SNAP" "$d/ID設計.md" "S-11-001|方式設計書|" "S-22-001|予約登録|"
+out=$(TAZUNA_ROOT="$ROOT" python3 "$PY" "$d" 2>&1); rc=$?
+if [ "$rc" -eq 0 ] && grep -qF "★ D-06003 排他制御の方式 が空なのに、機能の書類（S-22-001）" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: ★ を警告する"; echo "$out" | grep -E "★|ERROR" | head -3; fi
+printf '\n## D-06003 排他制御の方式\n\n- [1] 機能ごとに処理設計書で決める\n' >> "$d/S-11-001_方式設計書.md"
+out=$(TAZUNA_ROOT="$ROOT" python3 "$PY" "$d" 2>&1)
+if ! grep -qF "★ D-06003" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: 共通に書けば ★ は消える"; fi
+rm -rf "$d"
+
 echo "design-docs: ${pass} 件成功 / ${fail} 件失敗"
 [ "$fail" -eq 0 ]

@@ -81,29 +81,24 @@ def local_state():
                           "python3 scripts/design/id_design.py scaffold"))
     lack = sorted(i for i, (_, st) in states.items() if st in ("未着手", "必須不足") and i in files)
     if lack:
-        # 機能の書類で先に決めている設計項目（共通の方針がないまま、機能ごとに決め始めている）
-        used = {}
-        for i, name in files.items():
-            if cat.function_of(i):
-                _, lines, _ = catalog.parse_design(report.read(os.path.join(DESIGN, name)))
-                for _, n, t, u in lines:
-                    if n and u and not t.startswith("（廃止）"):
-                        used.setdefault(u, set()).add(i)
+        # ★ 共通の必須の見出しが空なのに、機能の書類が同じ設計項目を決めている（gaps.py。Lint も警告する）
+        import gaps  # noqa: E402
+        star = {(i, item): sorted({u for u, _ in users}) for i, item, _, users in gaps.stars(DESIGN, cat)}
         rows = []
         for i in lack:
             _, lines, na = catalog.parse_design(report.read(os.path.join(DESIGN, files[i])))
             written = {u for _, n, t, u in lines if n and not t.startswith("（廃止）")}
             need = [x for x, rec in cat.records.get(cat.instances[i]["書類ID"], {}).items()
                     if rec["記載"] == "必須" and x not in written | na]
-            early = [x for x in need if not cat.function_of(i) and used.get(x)]
-            names = [f"{x} {cat.items[x]['設計項目']}" + (f"（★ {'・'.join(sorted(used[x]))} が先に決めている）" if x in early else "")
+            early = [x for x in need if (i, x) in star]
+            names = [f"{x} {cat.items[x]['設計項目']}" + (f"（★ {'・'.join(star[(i, x)])} が先に決めている）" if x in early else "")
                      for x in need]
             rows.append((0 if early else 1, i, f"{i} {cat.instances[i]['名前']}: " + "、".join(names)))
         rows.sort()
         first = [r for r in rows if r[0] == 0]
         todos.append(Todo(50, "社員", f"必須の見出しが空の設計書を書く（{len(lack)} 件）",
                           "必須の見出しが埋まるまで、その書類は「完了」になりません。書かないと決めた見出しは「該当なし（理由）」と書く。"
-                          + (f"★ の見出しは、共通の方針がないまま機能の設計書で先に決めているので、先に共通の方針を決める（{len(first)} 件の書類）"
+                          + (f"★ の見出しは、機能の書類が先に決めているので、共通の方針・機能に任せる旨・該当なし（理由）のどれかを書く（{len(first)} 件の書類）"
                              if first else ""),
                           "\n".join(r[2] for r in rows)))
 

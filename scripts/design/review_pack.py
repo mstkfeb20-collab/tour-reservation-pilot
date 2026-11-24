@@ -48,6 +48,29 @@ def main():
 
     out = ["# 設計書レビューの材料", "", f"書類 {len(files)} 件・行 {sum(len(v) for v in lines.values())} 行", ""]
 
+    # 0. 機械で分かっている「書かれていないこと」（Lint も知らせる）。レビューでは、これが中身にどう効くかを見る
+    import gaps
+    w = gaps.written(design, cat)
+    out += ["## 0. 機械で分かっている「書かれていないこと」", "",
+            "Lint も知らせるもの。レビューでは、これが他の書類の中身にどう効くか（使っているのに定義がない、など）を見る。", ""]
+    st = gaps.stars(design, cat, w)
+    out.append("### ★ 共通の必須の見出しが空なのに、機能の書類が先に決めているもの")
+    out += [f"- {i}/{item} {name}: " + "、".join(lid for _, lid in users) for i, item, name, users in st] or ["- なし"]
+    out += ["", "### 行が指すファイルがないもの"]
+    out += [f"- {lid} → {p}" for lid, p, _ in gaps.missing_refs(a.root, design, cat, w)] or ["- なし"]
+    out += ["", "### 必須の見出しが空のもの（書類ごと）"]
+    empty = []
+    for inst in sorted(w):
+        if inst not in cat.instances:
+            continue
+        items_, na, _ = w[inst]
+        need = [x for x, rec in cat.records.get(cat.instances[inst]["書類ID"], {}).items()
+                if rec["記載"] == "必須" and x not in items_ and x not in na]
+        if need:
+            empty.append(f"- {inst} {cat.instances[inst]['名前']}: " + "、".join(f"{x} {cat.items[x]['設計項目']}" for x in need))
+    out += empty or ["- なし"]
+    out.append("")
+
     out += ["## 1. 同じ設計項目の行が2つ以上の書類にあるもの", "",
             "食い違い・同じ決まりの重複・共通に書くべき内容が機能の書類にないかを比べる。", ""]
     by_item = {}
@@ -64,10 +87,15 @@ def main():
     out += ["## 2. 定義の一覧", "", "設計書で使っている名前・値がここにないものを見る。", ""]
     for item, label in DEFINES.items():
         rows = by_item.get(item, [])
+        out.append(f"### {label}（{item}）")
         if rows:
-            out.append(f"### {label}（{item}）")
             out += [f"- {lid} {t}" for _, lid, t in rows]
-            out.append("")
+        else:
+            owners = sorted(i for i, r in cat.instances.items() if item in cat.records.get(r["書類ID"], {})
+                            and not cat.function_of(i) and r["作成"] == "書く")
+            out.append(f"- **定義がない**（{'、'.join(owners) or 'この項目を書く共通の書類がない'} のこの見出しが空）。"
+                       "設計書でこの種類の名前や値を使っていれば、すべて未定義になる")
+        out.append("")
     gl = os.path.join(a.root, "docs", "domain", "glossary.md")
     if os.path.isfile(gl):
         out += ["### 用語（docs/domain/glossary.md）"] + [l for l in read(gl).splitlines() if l.startswith("| ") and "---" not in l] + [""]
