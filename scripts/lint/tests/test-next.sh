@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, sys.argv[2] + "/scripts/design"); import catalog
 d = catalog.read_snapshot(sys.argv[1]); d["機能一覧"] = []; catalog.write_snapshot(d, sys.argv[1])
 EOF2
-check "機能一覧が空なら、機能一覧を書く" "**機能一覧を書く**（社員）" "$(run --local)"
+check "機能一覧が空なら、分かっている範囲で書くよう案内する" "**機能一覧を、分かっている範囲で書く**（社員）" "$(run --local)"
 
 python3 - "$w/docs/design/ID設計.md" "$ROOT" <<'EOF'
 import sys

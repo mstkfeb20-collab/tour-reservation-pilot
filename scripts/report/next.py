@@ -79,11 +79,12 @@ def local_state():
                           "python3 scripts/design/id_design.py export"))
         return todos, facts, None
     if not cat.data.get("機能一覧"):
-        todos.append(Todo(80, "社員", "機能一覧を書く",
-                          "設計書の一覧は機能一覧から作ります。まだ1行もありません",
-                          "docs/design/ID設計.xlsx の「機能一覧」シートに機能・画面・ジョブ・IF・帳票・テーブルを書き、"
-                          "python3 scripts/design/id_design.py list で書類一覧を作る"))
-        return todos, facts, cat
+        # 機能一覧が空でも、システムに1つの書類（方式設計書など）は書類一覧に並ぶので、そちらは先に進められる
+        todos.append(Todo(80, "社員", "機能一覧を、分かっている範囲で書く",
+                          "機能ごとの書類（処理・画面・ジョブ・IF・帳票・テーブル）は機能一覧から作ります。まだ1行もありません",
+                          "docs/design/ID設計.xlsx の「機能一覧」シートに、外部設計で決まっている機能と画面・ジョブ・IF・帳票・テーブルを書き、"
+                          "python3 scripts/design/id_design.py list で書類一覧を作り直す。設計が進んで画面やテーブルが増えたら、足して list をやり直す"
+                          "（番号は変わらず、新しい書類が末尾に増える）"))
 
     # 機能一覧と書類一覧のずれ
     sys.path.insert(0, os.path.join(HERE, "..", "design"))
