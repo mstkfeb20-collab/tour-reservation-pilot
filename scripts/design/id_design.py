@@ -4,7 +4,7 @@
     python3 scripts/design/id_design.py scaffold   # 書類一覧で「書く」にした書類のうち、まだないものの設計書ファイルを作る（見出しだけのひな形）
     python3 scripts/design/id_design.py progress   # 進捗・網羅状況のシートを作り直す（先に git fetch。統合先のブランチと比べて完了かを決める）
     python3 scripts/design/id_design.py export     # 書き出し（ID設計.md）を作る。--check なら食い違いを確かめるだけ
-    python3 scripts/design/id_design.py paint      # 誰が埋める列かを色で示し、凡例のシートを作る（list・progress でも行う）
+    python3 scripts/design/id_design.py paint      # 誰が埋める列かを見出しの色で示し、凡例のシートを作る（list・progress でも行う）
     オプション: --design <設計書のフォルダ>（既定 docs/design）
               --base <比べるブランチ>（progress 用。既定は環境変数 TAZUNA_BASE_BRANCH、なければ GitHub の既定のブランチ
               （origin/HEAD）、それもなければ origin/main。develop に統合する案件なら --base origin/develop）
@@ -125,14 +125,9 @@ STEPS = [
 ]
 
 
-def tab_kind(rule):
-    """シートのタブの色：人が書く列があれば人、なければ案件で変えてよい列があれば案件、なければそのシートの既定"""
-    kinds = set(rule.values())
-    return "人" if "人" in kinds else ("案件" if "案件" in kinds else rule["*"])
-
 
 def paint(wb):
-    """見出しの色・データの入力欄の色・シートの見出しの色で、誰が埋める列かを示す。凡例のシートを先頭に置く"""
+    """各シートの1行目（列の見出し）の色で、誰が埋める列かを示す。人が書く列は入力欄も塗る。凡例のシートを先頭に置く"""
     from openpyxl.styles import Font, PatternFill
     fill = {k: PatternFill("solid", fgColor="FF" + v[0], bgColor="FF" + v[0]) for k, v in WHO.items()}
     for sheet, rule in OWNER.items():
@@ -150,40 +145,35 @@ def paint(wb):
             if who == "人":  # 入力欄は空の行まで塗る
                 for r in range(2, last + 1):
                     ws.cell(r, c).fill = fill[who]
-        ws.sheet_properties.tabColor = "FF" + WHO[tab_kind(rule)][1]
+        ws.sheet_properties.tabColor = None  # シートのタブには色を付けない（列の色と意味が二重になるため）
         ws.freeze_panes = "A2"
     if LEGEND in wb.sheetnames:
         del wb[LEGEND]
     ws = wb.create_sheet(LEGEND, 0)
     bold = Font(bold=True)
-    tabfill = {k: PatternFill("solid", fgColor="FF" + v[1], bgColor="FF" + v[1]) for k, v in WHO.items()}
-    ws.append(["色は2か所に付けている。"])
-    ws.append(["① 各シートの1行目（列の見出し）の色 … その列を誰が埋めるか。人が書く列は、下の入力欄も同じ色にしている"])
-    ws.append(["② シートの見出し（画面下のタブ）の色 … そのシートで人が何をするか（人が書く列があるシートは黄、など）"])
+    ws.append(["各シートの1行目（列の見出し）の色で、その列を誰が埋めるかを示す。人が書く列は、下の入力欄も同じ色にしている。"])
     ws.append([])
-    ws.append(["区分", "① 列の色", "② タブの色", "意味", "① この色の列", "② この色のタブ"])
+    ws.append(["色", "意味", "この色の列"])
     head = ws.max_row
     for key in ["人", "案件", "ツール", "型"]:
-        sheets = "、".join(n for n, rule in OWNER.items() if tab_kind(rule) == key)
-        ws.append([key, "", "", WHO[key][2], COLS_TEXT[key], sheets or "—"])
-        ws.cell(ws.max_row, 2).fill = fill[key]
-        ws.cell(ws.max_row, 3).fill = tabfill[key]
+        ws.append([key, WHO[key][2], COLS_TEXT[key]])
+        ws.cell(ws.max_row, 1).fill = fill[key]
     ws.append([])
-    ws.append(["進め方", "", "", "", "誰が"])
+    ws.append(["進め方", "", "誰が"])
     steps = ws.max_row
     for n, text, who in STEPS:
-        ws.append([n, "", "", text, who])
+        ws.append([n, text, who])
     for r in (head, steps):
-        for c in range(1, 7):
+        for c in range(1, 4):
             ws.cell(r, c).font = bold
     ws.cell(1, 1).font = bold
-    for col, width in zip("ABCDEF", (8, 10, 10, 70, 50, 50)):
+    for col, width in zip("ABC", (8, 80, 60)):
         ws.column_dimensions[col].width = width
     from openpyxl.styles import Alignment
     for row in ws.iter_rows(min_row=head):
-        for c in row[3:6]:
+        for c in row[1:3]:
             c.alignment = Alignment(wrap_text=True, vertical="top")
-    ws.sheet_properties.tabColor = "FF000000"
+    ws.sheet_properties.tabColor = None
     wb.active = wb.sheetnames.index("機能一覧") if "機能一覧" in wb.sheetnames else 0
 
 
