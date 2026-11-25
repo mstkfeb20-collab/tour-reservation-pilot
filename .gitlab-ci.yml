@@ -1,0 +1,134 @@
+# tazuna の CI（GitLab 版）。GitHub の .github/workflows/verify.yml・tazuna-report.yml と同じことをする。
+# GitHub は このファイルを、GitLab は .github/workflows/ を読まないので、両方を置いたままでよい。
+#
+# 準備（案件リーダーが一度だけ。Settings → CI/CD → Variables）
+#   TAZUNA_GITLAB_TOKEN    プロジェクトのアクセストークン（ロール Reporter 以上・スコープ api）。「マスクする」で登録する。
+#                          MR の説明の読み取りと、MR・issue へのレポートの書き込みに使う。
+#                          ないときも Lint とテストは動く（MR の説明は CI の変数から読み、レポートはジョブのログに出すだけ）
+#   TAZUNA_REPORT_BRANCHES 日次レポートの対象のブランチ（空白区切り。既定は develop）
+# 日次レポートは、Build → Pipeline schedules に「平日の朝」（例 31 8 * * 1-5、Asia/Tokyo）を作り、
+# 変数 TAZUNA_DAILY_REPORT=1 を付けて登録する。
+#
+# GitHub との違い
+#   - MR の説明を直しても、パイプラインは動き直さない。「対象要件:」を直したら、MR の Pipelines で「Run pipeline」を押す
+#   - レポートは MR のメモ（コメント）に書く。同じメモを更新し続ける
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    # 統合に使うブランチ。案件の運用（develop・release など）に合わせて足す
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH =~ /^(main|master|develop|release\/.*)$/
+
+stages: [verify, report]
+
+variables:
+  GIT_DEPTH: "0"   # 向き先のブランチと比べて、消えた行IDを見つけるため
+
+.not-daily: &not-daily
+  rules:
+    - if: $TAZUNA_DAILY_REPORT == "1"
+      when: never
+    - when: on_success
+
+harness:
+  stage: verify
+  image: python:3.12
+  <<: *not-daily
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq jq > /dev/null
+    - pip install -q openpyxl
+    # MR では向き先のブランチを取ってくる（GitLab は既定で今のブランチしか取らない）
+    - |
+      if [ -n "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-}" ]; then
+        git fetch -q origin "+refs/heads/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:refs/remotes/origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+      fi
+  script:
+    # MR の説明は、パイプラインを作った時点のものではなく今のものを読む
+    - |
+      if [ -n "${CI_MERGE_REQUEST_IID:-}" ]; then
+        export TAZUNA_IS_PR=1 DESIGN_BASE_REF="origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        TAZUNA_PR_BODY=$(python3 scripts/report/gitlab.py mr-body); export TAZUNA_PR_BODY
+      fi
+      if bash scripts/lint/run-all.sh; then echo ok > lint-result.txt; else echo ng > lint-result.txt; exit 1; fi
+    - bash .github/hooks/tests/test-guard.sh
+    - bash scripts/lint/tests/test-design-docs.sh
+    - bash scripts/lint/tests/test-design-transcribe.sh
+    - bash scripts/lint/tests/test-id-design.sh
+    - bash scripts/lint/tests/test-ddl-comments.sh
+    - bash scripts/lint/tests/test-requirement-traceability.sh
+    - bash scripts/lint/tests/test-report.sh
+    - bash scripts/lint/tests/test-next.sh
+    - bash scripts/lint/tests/test-review-pack.sh
+    - bash scripts/lint/tests/test-gitlab.sh
+  artifacts:
+    when: always
+    paths: [lint-result.txt]
+    expire_in: 7 days
+
+build:
+  stage: verify
+  image: maven:3.9-eclipse-temurin-17   # pom.xml の maven.compiler.release と合わせる
+  <<: *not-daily
+  variables:
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  cache:
+    key: maven
+    paths: [.m2/repository]
+  script:
+    - mvn -B verify   # 単体テスト・ArchUnit
+  artifacts:
+    when: always   # テストが落ちても結果を残す（MR レポートが読む）
+    paths: [target/surefire-reports/]
+    expire_in: 7 days
+
+mr-report:
+  stage: report
+  image: python:3.12
+  # MR に、対象要件のテスト仕様の行・作業一覧の未対応・テストと Lint の結果を書く（scripts/report/report.py）
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+  needs:
+    - job: harness
+      artifacts: true
+    - job: build
+      artifacts: true
+  script:
+    - git fetch -q origin "+refs/heads/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:refs/remotes/origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - python3 scripts/report/gitlab.py mr-body > pr-body.md
+    - |
+      LINT=$(cat lint-result.txt 2>/dev/null || echo ng)
+      python3 scripts/report/report.py pr --base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" --body-file pr-body.md \
+        --surefire target/surefire-reports --lint "$LINT" > report.md
+      cat report.md
+      python3 scripts/report/gitlab.py mr-note report.md
+
+daily-report:
+  stage: report
+  image: python:3.12
+  # 統合ブランチ（develop など）の1日の動きを、ブランチごとの issue「日次レポート（ブランチ名）」にメモで足す。
+  # main を商用リリース版にする運用では、main は対象にしない。どのブランチもなければ、既定のブランチで作る。
+  rules:
+    - if: $TAZUNA_DAILY_REPORT == "1"
+  needs: []
+  script:
+    - git fetch -q origin "+refs/heads/*:refs/remotes/origin/*"
+    - |
+      targets=""
+      for b in ${TAZUNA_REPORT_BRANCHES:-develop}; do
+        if git rev-parse -q --verify "origin/$b" > /dev/null; then targets="$targets $b"
+        else echo "ブランチ $b がないので飛ばしました"; fi
+      done
+      if [ -z "$targets" ]; then
+        targets="$CI_DEFAULT_BRANCH"
+        echo "対象のブランチがないので、既定のブランチ $CI_DEFAULT_BRANCH で作ります"
+      fi
+      for b in $targets; do
+        git checkout -q --detach "origin/$b"
+        python3 scripts/report/report.py daily --branch "origin/$b" --since "24 hours ago" | sed "1s#origin/##" > report.md
+        cat report.md
+        python3 scripts/report/gitlab.py issue-note "日次レポート（$b）" report.md \
+          "ブランチ $b の日次レポートを、このissueに1日1回書きます（.gitlab-ci.yml の daily-report）。"
+      done

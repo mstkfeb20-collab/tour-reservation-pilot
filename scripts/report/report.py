@@ -11,6 +11,8 @@ daily: ブランチ単位で1日1回。前回から状態が変わった書類�
 つなぎ目の決まり（docs/requirements/README.md）
   - テストには、確かめたテスト仕様の行 ID を @Tag で付ける（例 @Tag("S-26-002/D-15001/3")）
   - PR の本文には、作業一覧の行のうち対応しなかったものを「未対応: 行ID（理由）」の行で書く
+  - 実装・テストの根拠に、転記先にない設計書の行を使ったときは「設計書から: 行ID（理由）」の行で書く。
+    レポートは、それが転記先にあるか（見なくてよかった）、ないか（転記の漏れか置き場所の誤り）を分けて出す
 """
 import argparse
 import fnmatch
@@ -230,6 +232,31 @@ def pr_report(base, body, surefire_dir=None, lint=None):
                    and lid not in {f"{i}/{item}" for i, item, _ in mystars}]
         if unknown:
             out += ["未対応に書いたが、この機能の作業・テスト仕様にない行: " + ", ".join(unknown), ""]
+
+    # 設計書から直接読んだ行（根拠は転記先が原則。ここに出るものは、転記か設計書を直す候補）
+    direct = {}
+    for line in body_lines(body, "設計書から"):
+        for lid in LID_RE.findall(line):
+            direct[lid] = re.sub(rf"^.*?{re.escape(lid)}", "", line).strip(" 　（）()") or "（理由なし）"
+    if direct:
+        folder = os.path.join(ROOT, "docs", "design")
+        import gaps
+        live = {lid for _, _, rows in gaps.written(folder).values() for lid, _, _ in rows} \
+            if os.path.isfile(os.path.join(folder, "ID設計.md")) else set()
+        moved = "\n".join(read(p) for p in glob.glob(os.path.join(ROOT, "docs", "requirements", "*.md"))
+                          + glob.glob(os.path.join(ROOT, "docs", "tasks", "*.md")))
+        kinds = {"ない": [], "ある": [], "なし": []}
+        for lid, why in direct.items():
+            k = "なし" if lid not in live else ("ある" if lid in moved else "ない")
+            kinds[k].append(f"- {lid}: {why}")
+        out += ["### 設計書から直接読んだ行", "",
+                f"実装・テストの根拠にした設計書の行 {len(direct)} 件（根拠は転記先が原則）", ""]
+        if kinds["ない"]:
+            out += ["**転記先にない**（転記の漏れか、設計書の置き場所の誤り。転記ツールか設計書を直す候補）", ""] + kinds["ない"] + [""]
+        if kinds["ある"]:
+            out += ["転記先にある（設計書を見なくてよかった）", ""] + kinds["ある"] + [""]
+        if kinds["なし"]:
+            out += ["**設計書にない行ID**（書き間違いか、消えた行）", ""] + kinds["なし"] + [""]
 
     # テストの結果・Lint
     res = surefire(surefire_dir)

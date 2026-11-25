@@ -6,6 +6,8 @@
 .github/hooks/*
 .github/workflows/*
 .github/CODEOWNERS
+.gitlab-ci.yml
+.gitlab/*
 scripts/lint/lib.sh
 scripts/lint/run-all.sh
 scripts/lint/common/*

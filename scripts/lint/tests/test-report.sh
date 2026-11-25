@@ -36,6 +36,22 @@ check "テスト仕様の行を数える（### の下は数えない）" "テス
 check "どちらでもない行を出す" "- [ ] S-26-001/D-15001/2 当日は取り消せない" "$out"
 check "未対応の理由を出す" "- 未対応 S-26-001/D-15008/1: 銀行のテスト環境が用意できない" "$out"
 check "保護ファイルの変更を出す" "保護ファイルの変更: **docs/requirements/a.md**" "$out"
+# 設計書から直接読んだ行: 転記先にある・ない・設計書にない、に分ける
+mkdir -p "$w/docs/design"
+python3 "$ROOT/scripts/lint/tests/snapshot-for-test.py" "$w/docs/design/ID設計.md" "S-22-001|予約取消|"
+printf '# S-22-001 予約取消\n\n## D-01002 処理の目的・利用者\n\n- [1] 会員が自分の予約を取り消す\n- [2] 窓口担当が電話で受けた予約を取り消す\n' > "$w/docs/design/S-22-001_予約取消.md"
+printf -- '- 会員が取り消す（S-22-001/D-01002/1・目的）\n' > "$w/docs/tasks/S-22-001_予約取消.md"
+body=$'対象要件: REQ-22001\n設計書から: S-22-001/D-01002/2（窓口からの取消が要件にない）\n設計書から: S-22-001/D-01002/1（念のため）\n設計書から: S-22-001/D-01002/9（書き間違い）'
+out=$(TAZUNA_ROOT="$w" python3 "$PY" pr --base HEAD~1 --body-file <(printf '%s' "$body"))
+check "設計書から読んだ行を数える" "実装・テストの根拠にした設計書の行 3 件" "$out"
+check "転記先にない行は、直す候補" "**転記先にない**（転記の漏れか、設計書の置き場所の誤り。転記ツールか設計書を直す候補）
+
+- S-22-001/D-01002/2: 窓口からの取消が要件にない" "$out"
+check "転記先にある行" "転記先にある（設計書を見なくてよかった）
+
+- S-22-001/D-01002/1: 念のため" "$out"
+check "設計書にない行ID" "- S-22-001/D-01002/9: 書き間違い" "$out"
+rm -r "$w/docs/design" "$w/docs/tasks/S-22-001_予約取消.md"
 out=$(TAZUNA_ROOT="$w" python3 "$PY" pr --base HEAD~1 --body-file <(printf '対象要件: なし') )
 check "対象要件なし" "対象要件: なし" "$out"
 out=$(TAZUNA_ROOT="$w" python3 "$PY" daily --branch develop --since "2000-01-01")

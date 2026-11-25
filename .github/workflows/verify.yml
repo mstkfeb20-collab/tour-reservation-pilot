@@ -54,6 +54,8 @@ jobs:
         run: bash scripts/lint/tests/test-next.sh
       - name: 設計書レビューの材料の自己テスト
         run: bash scripts/lint/tests/test-review-pack.sh
+      - name: GitLab の道具の自己テスト
+        run: bash scripts/lint/tests/test-gitlab.sh
 
   build:
     name: ビルドとテスト

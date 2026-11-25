@@ -1,11 +1,15 @@
 """次に何をすればよいかを出す（読むだけで、何も書き換えない）。
 
     python3 scripts/report/next.py                 # 今の段階と、次にやること（優先順）
-    python3 scripts/report/next.py --local          # GitHub を見ない（PR・issue・CI を飛ばす）
+    python3 scripts/report/next.py --local          # GitHub・GitLab を見ない（PR・MR・issue・CI を飛ばす）
     python3 scripts/report/next.py --issue REQ-22002  # その要件を実装する issue の下書き
 
-ローカル（設計書・転記・要件・テスト）と GitHub（開いている PR・issue・CI）を読み、
+ローカル（設計書・転記・要件・テスト）と GitHub または GitLab（開いている PR・MR・issue・CI）を読み、
 止まっているものから順に「誰が・何を・どうやって」を並べる。案内役のスキル（base-navigator）がこれを使って答える。
+
+GitHub か GitLab かは、環境変数 TAZUNA_PLATFORM、git の設定 tazuna.platform（git config tazuna.platform gitlab）、
+CI の環境、origin の URL の順で決める。社内の GitLab で URL に gitlab が入らないときは、git の設定で決めておく。
+GitLab では gitlab.py が TAZUNA_GITLAB_TOKEN（なければ GITLAB_TOKEN）で読む。
 """
 import argparse
 import json
@@ -18,6 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "design"))
 import catalog  # noqa: E402
+import gitlab  # noqa: E402
 import report  # noqa: E402
 
 ROOT = report.ROOT
@@ -43,6 +48,24 @@ def gh(path):
         return json.loads(text) if text else []
     except json.JSONDecodeError:
         return None
+
+
+def platform():
+    p = os.environ.get("TAZUNA_PLATFORM", "").lower()
+    if not p:
+        try:
+            p = subprocess.run(["git", "-C", ROOT, "config", "--get", "tazuna.platform"],
+                               capture_output=True, text=True, timeout=10).stdout.strip().lower()
+        except (OSError, subprocess.TimeoutExpired):
+            p = ""
+    if p in ("github", "gitlab"):
+        return p
+    if os.environ.get("GITLAB_CI"):
+        return "gitlab"
+    if os.environ.get("GITHUB_ACTIONS"):
+        return "github"
+    url = gitlab._origin(ROOT)
+    return "gitlab" if "gitlab" in url and "github" not in url else "github"
 
 
 # ---- ローカル ----
@@ -185,6 +208,69 @@ def github_state(facts):
     return todos, gfacts
 
 
+# ---- GitLab ----
+# GitLab では、エージェントは手元（VS Code の Copilot）で動く。MR は作業する人が作り、CI の承認待ちはない。
+
+def gitlab_state(facts):
+    todos, gfacts = [], {}
+    mrs = gitlab.api("projects/:id/merge_requests?state=opened&per_page=100", root=ROOT)
+    if mrs is None:
+        gfacts["gitlab"] = "見られません（TAZUNA_GITLAB_TOKEN か GITLAB_TOKEN に、read_api のトークンを入れてください）"
+        return todos, gfacts
+    issues = gitlab.api("projects/:id/issues?state=opened&per_page=100", root=ROOT) or []
+    for mr in mrs:
+        n, title = mr["iid"], mr["title"]
+        one = gitlab.api(f"projects/:id/merge_requests/{n}", root=ROOT) or mr
+        pipe = (one.get("head_pipeline") or {}).get("status")
+        if one.get("draft") or one.get("work_in_progress"):
+            todos.append(Todo(30, "—", f"MR !{n} は作業中（下書き）", title,
+                              "作業する人が終えて「Mark as ready」にするのを待つ"))
+            continue
+        if pipe in ("running", "pending", "created", "waiting_for_resource", "preparing"):
+            todos.append(Todo(30, "—", f"MR !{n} の CI が動いている", title, "終わるのを待つ"))
+            continue
+        if pipe == "manual":
+            todos.append(Todo(1, "社員", f"MR !{n} の CI に、手で動かすジョブがある",
+                              "手で動かすジョブが終わるまで、パイプラインが完了しません",
+                              f"MR !{n} の「Pipelines」で、止まっているジョブの再生ボタンを押す"))
+            continue
+        if pipe in ("failed", "canceled"):
+            todos.append(Todo(2, "社員", f"MR !{n} の CI が失敗している",
+                              "Lint かテストが落ちています",
+                              f"MR !{n} の「Pipelines」で失敗したジョブを開き、MR の作者が手元の Copilot で直す。"
+                              "ハーネス（Lint・hooks）の誤りに見えるなら標準化チームに伝える"))
+            continue
+        body = one.get("description") or ""
+        qs = re.search(r"##[^\n]*判断してほしい[^\n]*\n(.*?)(?=\n## |\Z)", body, re.S)
+        open_q = [l for l in (qs.group(1).splitlines() if qs else [])
+                  if l.strip().startswith(("- ", "* ", "1")) and not re.search(r"（(回答済み|保留)）", l)]
+        if open_q:
+            todos.append(Todo(10, "社員", f"MR !{n} の質問に答える（{len(open_q)} 件）",
+                              "設計書の穴や、業務で決めることが質問として出ています",
+                              "設計書の穴なら設計書を直して転記し、MR の作者に取り込んでもらう。"
+                              "業務で決めることなら決めて設計書に書く。決められないものは保留として MR にコメントする"))
+        elif pipe == "success":
+            todos.append(Todo(20, "社員", f"MR !{n} をレビューしてマージする",
+                              "CI が通っています",
+                              f"MR !{n} の「tazuna の PR レポート」のメモで、テスト仕様の行と未対応の作業を確かめる。"
+                              "問題なければ承認（Approve）→「Squash commits」を付けてマージ"))
+        elif pipe is None:
+            todos.append(Todo(15, "社員", f"MR !{n} の CI が動いていない",
+                              "MR のパイプラインがありません（.gitlab-ci.yml の取り込み漏れ、または Runner がない）",
+                              f"MR !{n} の「Pipelines」で「Run pipeline」を押す。動かなければ案件リーダーに伝える"))
+    linked = {r for i in issues for r in REQ_RE.findall((i.get("title") or "") + (i.get("description") or ""))}
+    for i in issues:
+        found = REQ_RE.findall((i.get("title") or "") + (i.get("description") or ""))
+        ref = re.compile(rf"#{i['iid']}\b")
+        if found and not i.get("assignees") and not any(ref.search(m.get("description") or "") for m in mrs):
+            todos.append(Todo(25, "案件リーダー", f"issue #{i['iid']} の担当者を決める",
+                              f"要件 {', '.join(sorted(set(found)))} の issue が、まだ誰にも渡っていません",
+                              f"issue #{i['iid']} の Assignee に作業する人を入れる。その人が手元の Copilot に issue の本文を渡して作業し、MR を出す"))
+    gfacts["prs"], gfacts["issues"] = len(mrs), len(issues)
+    gfacts["unlinked"] = [r for r in facts.get("untested", []) if r not in linked]
+    return todos, gfacts
+
+
 def issue_draft(req):
     reqs, specs = report.requirements(ROOT)
     if req not in reqs:
@@ -215,18 +301,19 @@ def issue_draft(req):
         "1. `AGENTS.md`", f"2. `{f}`（完了条件・テスト仕様・実装するときの条件）",
         *[f"{k}. `{t}`（作業一覧）" for k, t in enumerate(mine, 3)],
         *([f"{3 + len(mine)}. " + "・".join(f"`{s}`" for s in schema) + "（テーブル・列の意味と制約は DDL が正）"] if schema else []),
-        f"{4 + len(mine)}. 必要に応じて `docs/design/` の元の設計書、`docs/domain/`、`docs/conventions.md`", "",
+        f"{4 + len(mine)}. 必要に応じて `docs/domain/`、`docs/conventions.md`。`docs/design/` の設計書は背景として読んでよいが、実装とテストの根拠にはしない（下の決まりごと）", "",
         "## 範囲", "", "- 範囲内: （作業一覧のうち、この issue でやるもの）", "- 範囲外: （やらないもの）",
         "- 作業一覧・テスト仕様の行のうち対応しないものは、PR の本文に「未対応: 行ID（理由）」で書く。", "",
         "## 決まりごと", "",
         "- `docs/requirements/`・`docs/design/ID設計.*`・`docs/domain/invariants.md`・`base-*` スキル・共通 Lint・hooks は編集できない。変えたいときは PR の説明に提案を書く。",
         "- 設計書に書かれていないことは推測で埋めず、PR に質問として書く。",
+        "- 実装とテストの根拠は、上の要件・作業一覧・DDL と、ID で指された設計書の行だけにする。転記先にない設計書の行を根拠にしたときは、PR の本文に「設計書から: 行ID（理由）」の行で書く。",
         "- PR には実行したコマンドと結果を貼る。", ""])
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--local", action="store_true", help="GitHub を見ない")
+    ap.add_argument("--local", action="store_true", help="GitHub・GitLab を見ない")
     ap.add_argument("--issue", help="この要件を実装する issue の下書きを出す（REQ-xxxxx）")
     a = ap.parse_args()
     if a.issue:
@@ -235,10 +322,10 @@ def main():
     todos, facts, cat = local_state()
     gfacts = {}
     if not a.local:
-        t2, gfacts = github_state(facts)
+        t2, gfacts = (gitlab_state if platform() == "gitlab" else github_state)(facts)
         todos += t2
     else:
-        gfacts["unlinked"] = facts.get("untested", [])  # GitHub を見ないので、テストのない要件をすべて挙げる
+        gfacts["unlinked"] = facts.get("untested", [])  # GitHub・GitLab を見ないので、テストのない要件をすべて挙げる
     for r in gfacts.get("unlinked", []):
         todos.append(Todo(35, "社員", f"{r} を実装する issue を作る",
                           "要件は決まっているのに、テストも開いている issue もありません",
@@ -261,9 +348,12 @@ def main():
         out.append(f"- 書類: {len(docs)} 件（完了 {facts.get('done', 0)}）")
         out.append(f"- 要件: {len(facts.get('reqs', {}))} 件（テストなし {len(facts.get('untested', []))}）")
     if "prs" in gfacts:
-        out.append(f"- 開いている PR {gfacts['prs']} 件・issue {gfacts['issues']} 件")
+        pr = "MR" if platform() == "gitlab" else "PR"
+        out.append(f"- 開いている {pr} {gfacts['prs']} 件・issue {gfacts['issues']} 件")
     if "github" in gfacts:
         out.append(f"- GitHub: {gfacts['github']}")
+    if "gitlab" in gfacts:
+        out.append(f"- GitLab: {gfacts['gitlab']}")
     out += ["", "## 次にやること（上から順に）", ""]
     if not todos:
         out.append("止まっているものはありません。")

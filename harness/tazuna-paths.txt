@@ -23,3 +23,5 @@ scripts/design/*
 scripts/report/*
 .github/workflows/tazuna-report.yml
 harness/tazuna-paths.txt
+.gitlab-ci.yml
+.gitlab/merge_request_templates/Default.md

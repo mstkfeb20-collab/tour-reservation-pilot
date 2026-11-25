@@ -39,6 +39,8 @@ if [ -d _tazuna ]; then
   trap 'mv _tazuna.bak _tazuna' EXIT
 fi
 expect deny  "base スキルの編集を止める"     "$(edit_path '.github/skills/base-code-review/SKILL.md')"
+expect deny  "GitLab の CI の編集を止める"   "$(edit_path '.gitlab-ci.yml')"
+expect deny  "GitLab の MR テンプレートの編集を止める" "$(edit_path '.gitlab/merge_request_templates/Default.md')"
 expect deny  "不変条件の編集を止める"        "$(edit_path 'docs/domain/invariants.md')"
 expect deny  "共通Lintの編集を止める"        "$(edit_path 'scripts/lint/common/skill-naming.sh')"
 expect deny  "絶対パスでも止める"            "$(edit_path "$PWD/docs/requirements/README.md")"
