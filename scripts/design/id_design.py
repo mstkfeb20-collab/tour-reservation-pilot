@@ -110,20 +110,25 @@ OWNER = {
     "振り分け表": {"*": "型"}, "振り分けルール": {"*": "型"}, "属性の判定基準": {"*": "型"},
 }
 LEGEND = "凡例"
-LEGEND_ROWS = [
-    ["色", "意味", "シート・列"],
-    ["人", WHO["人"][2], "機能一覧の全列、書類一覧の「作成」「理由」"],
-    ["案件", WHO["案件"][2], "記載項目の「記載」（必須・該当時）"],
-    ["ツール", WHO["ツール"][2], "書類一覧の「作成」「理由」以外、進捗、網羅状況、集計"],
-    ["型", WHO["型"][2], "書類の種類、記載項目（「記載」以外）、振り分け表、振り分けルール、属性の判定基準"],
-    [],
-    ["進め方", "", ""],
-    ["1", "機能一覧に、1機能1行で、使う画面・ジョブ・IF・帳票・テーブルを書く（1つのセルに複数書くときは「、」で区切る）", "人"],
-    ["2", "python3 scripts/design/id_design.py list で書類一覧を作る（書類の種類の「作る単位」ごとに書類実体ができ、「機能」の列で処理設計書に結びつく）", "ツール"],
-    ["3", "書類一覧の「作成」を決める。書かない書類は「書かない」にし、「理由」を書く", "人"],
-    ["4", "python3 scripts/design/id_design.py scaffold で設計書のひな形を作り、設計書を書く", "ツール → 人"],
-    ["5", "python3 scripts/design/id_design.py progress で進捗・網羅状況を作り直す", "ツール"],
+COLS_TEXT = {  # 列の色が付く場所（凡例に書く）
+    "人": "機能一覧の全列、書類一覧の「作成」「理由」",
+    "案件": "記載項目の「記載」（必須・該当時）",
+    "ツール": "書類一覧の「作成」「理由」以外、進捗・網羅状況・集計の全列",
+    "型": "書類の種類・振り分け表・振り分けルール・属性の判定基準の全列、記載項目の「記載」以外",
+}
+STEPS = [
+    ("1", "機能一覧に、1機能1行で、使う画面・ジョブ・IF・帳票・テーブルを書く（1つのセルに複数書くときは「、」で区切る）", "人"),
+    ("2", "python3 scripts/design/id_design.py list で書類一覧を作る（書類の種類の「作る単位」ごとに書類実体ができ、「機能」の列で処理設計書に結びつく）", "ツール"),
+    ("3", "書類一覧の「作成」を決める。書かない書類は「書かない」にし、「理由」を書く", "人"),
+    ("4", "python3 scripts/design/id_design.py scaffold で設計書のひな形を作り、設計書を書く", "ツール → 人"),
+    ("5", "python3 scripts/design/id_design.py progress で進捗・網羅状況を作り直す", "ツール"),
 ]
+
+
+def tab_kind(rule):
+    """シートのタブの色：人が書く列があれば人、なければ案件で変えてよい列があれば案件、なければそのシートの既定"""
+    kinds = set(rule.values())
+    return "人" if "人" in kinds else ("案件" if "案件" in kinds else rule["*"])
 
 
 def paint(wb):
@@ -135,33 +140,49 @@ def paint(wb):
             continue
         ws = wb[sheet]
         last = max(ws.max_row, 200 if rule.get("*") == "人" or "人" in rule.values() else ws.max_row)
-        kinds = set()
         for c in range(1, ws.max_column + 1):
             name = ws.cell(1, c).value
             if name in (None, ""):
                 continue
             who = rule.get(name, rule["*"])
-            kinds.add(who)
             ws.cell(1, c).fill = fill[who]
             ws.cell(1, c).font = Font(bold=True)
             if who == "人":  # 入力欄は空の行まで塗る
                 for r in range(2, last + 1):
                     ws.cell(r, c).fill = fill[who]
-        ws.sheet_properties.tabColor = "FF" + WHO["人" if "人" in kinds else ("案件" if "案件" in kinds else rule["*"])][1]
+        ws.sheet_properties.tabColor = "FF" + WHO[tab_kind(rule)][1]
         ws.freeze_panes = "A2"
     if LEGEND in wb.sheetnames:
         del wb[LEGEND]
     ws = wb.create_sheet(LEGEND, 0)
-    for row in LEGEND_ROWS:
-        ws.append(row)
-    for r in (1, 7):
-        for c in range(1, 4):
-            ws.cell(r, c).font = Font(bold=True)
-    for r, key in enumerate(["人", "案件", "ツール", "型"], 2):
-        ws.cell(r, 1).fill = fill[key]
-    ws.column_dimensions["A"].width = 10
-    ws.column_dimensions["B"].width = 90
-    ws.column_dimensions["C"].width = 60
+    bold = Font(bold=True)
+    tabfill = {k: PatternFill("solid", fgColor="FF" + v[1], bgColor="FF" + v[1]) for k, v in WHO.items()}
+    ws.append(["色は2か所に付けている。"])
+    ws.append(["① 各シートの1行目（列の見出し）の色 … その列を誰が埋めるか。人が書く列は、下の入力欄も同じ色にしている"])
+    ws.append(["② シートの見出し（画面下のタブ）の色 … そのシートで人が何をするか（人が書く列があるシートは黄、など）"])
+    ws.append([])
+    ws.append(["区分", "① 列の色", "② タブの色", "意味", "① この色の列", "② この色のタブ"])
+    head = ws.max_row
+    for key in ["人", "案件", "ツール", "型"]:
+        sheets = "、".join(n for n, rule in OWNER.items() if tab_kind(rule) == key)
+        ws.append([key, "", "", WHO[key][2], COLS_TEXT[key], sheets or "—"])
+        ws.cell(ws.max_row, 2).fill = fill[key]
+        ws.cell(ws.max_row, 3).fill = tabfill[key]
+    ws.append([])
+    ws.append(["進め方", "", "", "", "誰が"])
+    steps = ws.max_row
+    for n, text, who in STEPS:
+        ws.append([n, "", "", text, who])
+    for r in (head, steps):
+        for c in range(1, 7):
+            ws.cell(r, c).font = bold
+    ws.cell(1, 1).font = bold
+    for col, width in zip("ABCDEF", (8, 10, 10, 70, 50, 50)):
+        ws.column_dimensions[col].width = width
+    from openpyxl.styles import Alignment
+    for row in ws.iter_rows(min_row=head):
+        for c in row[3:6]:
+            c.alignment = Alignment(wrap_text=True, vertical="top")
     ws.sheet_properties.tabColor = "FF000000"
     wb.active = wb.sheetnames.index("機能一覧") if "機能一覧" in wb.sheetnames else 0
 
