@@ -129,7 +129,7 @@ LEGEND_ROWS = [
 def paint(wb):
     """見出しの色・データの入力欄の色・シートの見出しの色で、誰が埋める列かを示す。凡例のシートを先頭に置く"""
     from openpyxl.styles import Font, PatternFill
-    fill = {k: PatternFill("solid", fgColor=v[0]) for k, v in WHO.items()}
+    fill = {k: PatternFill("solid", fgColor="FF" + v[0], bgColor="FF" + v[0]) for k, v in WHO.items()}
     for sheet, rule in OWNER.items():
         if sheet not in wb.sheetnames:
             continue
@@ -147,7 +147,7 @@ def paint(wb):
             if who == "人":  # 入力欄は空の行まで塗る
                 for r in range(2, last + 1):
                     ws.cell(r, c).fill = fill[who]
-        ws.sheet_properties.tabColor = WHO["人" if "人" in kinds else ("案件" if "案件" in kinds else rule["*"])][1]
+        ws.sheet_properties.tabColor = "FF" + WHO["人" if "人" in kinds else ("案件" if "案件" in kinds else rule["*"])][1]
         ws.freeze_panes = "A2"
     if LEGEND in wb.sheetnames:
         del wb[LEGEND]
@@ -162,7 +162,7 @@ def paint(wb):
     ws.column_dimensions["A"].width = 10
     ws.column_dimensions["B"].width = 90
     ws.column_dimensions["C"].width = 60
-    ws.sheet_properties.tabColor = "000000"
+    ws.sheet_properties.tabColor = "FF000000"
     wb.active = wb.sheetnames.index("機能一覧") if "機能一覧" in wb.sheetnames else 0
 
 
