@@ -33,10 +33,10 @@ elif cmd == "delfunc":
     ws = wb["機能一覧"]
     for i in range(ws.max_row, 1, -1):
         if ws.cell(i, 1).value == sys.argv[3]: ws.delete_rows(i)
-elif cmd == "retire":
+elif cmd in ("retire", "unused"):
     ws = wb["書類の種類"]; head = [c.value for c in ws[1]]; col = head.index("状態")
     for row in ws.iter_rows(min_row=2):
-        if row[0].value == sys.argv[3]: row[col].value = "廃止"
+        if row[0].value == sys.argv[3]: row[col].value = "廃止" if cmd == "retire" else "使わない"
 elif cmd == "skip":
     for row in wb["書類一覧"].iter_rows(min_row=2):
         if row[0].value == sys.argv[3]: row[5].value = "書かない"; row[6].value = "要らない"
@@ -65,6 +65,9 @@ row "S-33-001" | grep -q '書かない | 要らない' && ok || ng "人が付け
 edit retire "S-31"
 run list
 row "S-31-001" | grep -q '廃止 | 書類の種類を廃止した' && ok || ng "書類の種類を廃止すると、その書類は消さずに廃止"
+edit unused S-18
+run list
+row "S-18-001" | grep -q '廃止 | この案件では使わない書類の種類にした' && ok || ng "案件で使わないにした書類の種類は、書類一覧で廃止になる"
 run scaffold
 f="$w/docs/design/S-23-001_J110.md"
 [ -f "$f" ] && grep -q '^## D-08002 起動条件' "$f" && ok || ng "ひな形に記載項目の見出しが並ぶ"

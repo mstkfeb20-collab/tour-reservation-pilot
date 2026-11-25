@@ -141,7 +141,7 @@ class Catalog:
         return next((d for d in self.docs if self.role(d) == role), None)
 
     def retired(self, doc):
-        return (self.docs.get(doc, {}).get("状態") or "").strip() == "廃止"
+        return (self.docs.get(doc, {}).get("状態") or "").strip() in ("廃止", "使わない")
 
     def function_of(self, inst):
         """書類実体が属する機能の中心の書類（例: 処理設計書の実体）。中心の書類自身は自分、共通の書類は None"""
