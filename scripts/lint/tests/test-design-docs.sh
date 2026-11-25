@@ -161,5 +161,17 @@ out=$(TAZUNA_ROOT="$ROOT" python3 "$PY" "$d" 2>&1)
 if ! grep -qF "★ D-06003" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: 共通に書けば ★ は消える"; fi
 rm -rf "$d"
 
+# CRUD の行に出てくる名前を DDL と突き合わせ、テーブルにも列にもない名前を警告する（止めない）
+r=$(mktemp -d); d="$r/docs/design"; mkdir -p "$d" "$r/db/schema"
+printf 'CREATE TABLE RESERVE (\n    RESERVE_NO CHAR(13) NOT NULL,\n    VERSION NUMBER(9) NOT NULL,\n    CONSTRAINT PK_RESERVE PRIMARY KEY (RESERVE_NO)\n);\n' > "$r/db/schema/RESERVE.sql"
+printf '# S-22-001 処理設計書：予約取消\n\n## D-05006 CRUD\n\n- [1] RESERVE の VERSION を UPDATE する\n- [2] TOURINFO を読み、残席を更新する\n- [3] J110 とは同時に動かない\n' > "$d/S-22-001_予約取消.md"
+python3 "$SNAP" "$d/ID設計.md" "S-22-001|予約取消|"
+out=$(TAZUNA_ROOT="$r" python3 "$PY" "$d" 2>&1); rc=$?
+if [ "$rc" -eq 0 ] && grep -qF "S-22-001/D-05006/2（CRUD）の TOURINFO が DDL にありません" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: DDL にないテーブルを警告する"; echo "$out" | head -5; fi
+if ! grep -qE "（CRUD）の (RESERVE|VERSION|UPDATE|J110) " <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: DDL のテーブル・列、SQL の言葉、ジョブ ID は警告しない"; fi
+out=$(cd "$r" && python3 -c "import sys; sys.path.insert(0, '$ROOT/scripts/design'); import gaps; print(gaps.crud('.', 'docs/design')[0])")
+if grep -qF "'RESERVE': ['S-22-001/D-05006/1']" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: テーブルから CRUD の行を逆引きできる: $out"; fi
+rm -rf "$r"
+
 echo "design-docs: ${pass} 件成功 / ${fail} 件失敗"
 [ "$fail" -eq 0 ]

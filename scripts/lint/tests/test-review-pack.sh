@@ -16,6 +16,7 @@ check "決定とテスト仕様の節" "## 3. 機能ごとの決定とテスト�
 if [ -d "$E" ]; then
   check "共通と機能の行を並べる" "- [共通] S-11-001/D-06003/1"
   check "DDL の列と CHECK" "RESERVE: RESERVE_NO"
+  check "テーブルから CRUD の行を逆引きする" "- RESERVE: S-22-002/D-05006/1"
   check "テスト仕様の行を分ける" "- [テスト仕様] S-26-002/D-15001/1"
 fi
 echo "review-pack: ${pass} 件成功 / ${fail} 件失敗"

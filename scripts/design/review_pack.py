@@ -110,6 +110,13 @@ def main():
                 checks = re.findall(r"CHECK\s*\((.*?)\)\s*,?\s*$", m.group(2), re.M | re.I)
                 out.append(f"- {m.group(1)}: {', '.join(cols)}" + (f"（CHECK: {' / '.join(checks)}）" if checks else ""))
         out.append("")
+    import gaps
+    uses, unknown = gaps.crud(a.root, design, cat)
+    if uses or unknown:
+        out.append("### テーブルごとの CRUD（処理設計書の D-05006 の行の逆引き）")
+        out += [f"- {t}: {', '.join(lids)}" for t, lids in sorted(uses.items())]
+        out += [f"- **DDL にない名前** {n}: {lid}" for lid, n in unknown]
+        out.append("")
 
     out += ["## 3. 機能ごとの決定とテスト仕様", "", "テスト仕様のどの行も触れていない決定、決定と食い違うテスト仕様を見る。", ""]
     centers = sorted({cat.function_of(i) for i in lines if cat.function_of(i)})

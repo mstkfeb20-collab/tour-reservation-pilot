@@ -81,19 +81,19 @@ def local_state():
     if not cat.data.get("機能一覧"):
         # 機能一覧が空でも、システムに1つの書類（方式設計書など）は書類一覧に並ぶので、そちらは先に進められる
         todos.append(Todo(80, "社員", "機能一覧を、分かっている範囲で書く",
-                          "機能ごとの書類（処理・画面・ジョブ・IF・帳票・テーブル）は機能一覧から作ります。まだ1行もありません",
-                          "docs/design/ID設計.xlsx の「機能一覧」シートに、外部設計で決まっている機能と画面・ジョブ・IF・帳票・テーブルを書き、"
-                          "python3 scripts/design/id_design.py list で書類一覧を作り直す。設計が進んで画面やテーブルが増えたら、足して list をやり直す"
+                          "機能ごとの書類（処理・画面・ジョブ・IF・帳票）は機能一覧から作ります。まだ1行もありません",
+                          "docs/design/ID設計.xlsx の「機能一覧」シートに、外部設計で決まっている機能と画面・ジョブ・IF・帳票を書き、"
+                          "python3 scripts/design/id_design.py list で書類一覧を作り直す。設計が進んで画面などが増えたら、足して list をやり直す"
                           "（番号は変わらず、新しい書類が末尾に増える）"))
 
     # 機能一覧と書類一覧のずれ
     sys.path.insert(0, os.path.join(HERE, "..", "design"))
     import id_design  # noqa: E402
-    want = {(doc, name) for doc, name, _ in id_design.derive(cat.data)}
+    want = {(doc, name) for doc, name, _ in id_design.derive(cat.data, ROOT)}
     have = {(r["書類ID"], r["名前"]) for r in cat.instances.values() if r["作成"] != "廃止"}
     if want - have or have - want:
         todos.append(Todo(70, "社員", "書類一覧を作り直す",
-                          f"機能一覧と書類一覧が合っていません（足りない {len(want - have)}・余分 {len(have - want)}）",
+                          f"機能一覧・DDL と書類一覧が合っていません（足りない {len(want - have)}・余分 {len(have - want)}）",
                           "python3 scripts/design/id_design.py list を実行し、増えた書類の「作成」（書く・書かない）を決める"))
 
     files = catalog.design_files(DESIGN)
@@ -125,6 +125,16 @@ def local_state():
                           + (f"★ の見出しは、機能の書類が先に決めているので、共通の方針・機能に任せる旨・該当なし（理由）のどれかを書く（{len(first)} 件の書類）"
                              if first else ""),
                           "\n".join(r[2] for r in rows)))
+
+    # CRUD の行に出てくるのに DDL がないテーブル（gaps.py。Lint も警告する）
+    import gaps  # noqa: E402
+    nodll = gaps.crud(ROOT, DESIGN, cat)[1]
+    if nodll:
+        todos.append(Todo(45, "社員", f"CRUD に出てくる名前の DDL を作る（{len(nodll)} 件）",
+                          "処理設計書の CRUD の行が、DDL（db/schema）にないテーブルか列を使っています: "
+                          + "、".join(f"{n}（{lid}）" for lid, n in nodll[:6]),
+                          "テーブルなら db/schema/<テーブル名>.sql を作り（列の説明も書く）、python3 scripts/design/id_design.py list で"
+                          "テーブル設計書を増やす。列なら DDL に足す。書き間違いなら CRUD の行を直す"))
 
     # 転記
     sys.path.insert(0, os.path.join(HERE, "..", "design"))
@@ -284,12 +294,14 @@ def issue_draft(req):
     if cat:
         m = re.match(r"REQ-(\d{2})(\d{3})$", req)
         center = cat.function_of(f"S-{m.group(1)}-{m.group(2)}") if m else None
-        fname = cat.instances.get(center, {}).get("名前") if center else None
-        row = next((f for f in cat.data.get("機能一覧", []) if f.get("機能") == fname), {})
-        tables = set(catalog.split(row.get("テーブル")))
+        import gaps
+        uses, _ = gaps.crud(ROOT, DESIGN, cat)
+        tables = {t for t, lids in uses.items() if any(cat.function_of(l.split("/")[0]) == center for l in lids)}
         mine = [t for t in tasks if center and (cat.function_of(os.path.basename(t)[:8]) == center
-                                                or cat.instances.get(os.path.basename(t)[:8], {}).get("名前") in tables)]
+                                                or (cat.instances.get(os.path.basename(t)[:8], {}).get("名前") or "").upper() in tables)]
     schema = sorted(os.path.relpath(p, ROOT) for p in __import__("glob").glob(os.path.join(ROOT, "db", "schema", "*.sql")))
+    if cat and tables:  # この機能の CRUD に出てくるテーブルだけ
+        schema = [p for p in schema if os.path.splitext(os.path.basename(p))[0].upper() in tables]
     return "\n".join([
         f"## やること", "", "（何を作るか・変えるかを1〜2文で）", "",
         "## 完了条件", "",

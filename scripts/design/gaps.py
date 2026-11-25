@@ -2,7 +2,10 @@
 
 stars:   ★ 共通の書類の必須の見出しが空なのに、機能の書類が同じ設計項目を決めている
 missing_refs: 設計書の行が指すファイルが実在しない（転記で作られる要件・作業一覧のファイルと、書類一覧のテーブルの DDL は、まだなくてもよい）
+crud:    処理設計書の CRUD（D-05006）の行に出てくるテーブル名を DDL（db/schema）と突き合わせる。
+         テーブルごとに、どの行が触るか（逆引き）と、DDL のテーブルにも列にもない名前を返す
 """
+import glob
 import os
 import re
 
@@ -69,3 +72,41 @@ def missing_refs(root, folder, cat=None, w=None):
                     continue
                 out.append((lid, p, "error" if p.startswith(("docs/", "db/")) else "warn"))
     return out
+
+
+CRUD_ITEM = "D-05006"
+NAME_RE = re.compile(r"(?<![A-Za-z0-9_])[A-Z][A-Z0-9_]{2,}(?![A-Za-z0-9_])")
+NOT_TABLE = {"INSERT", "UPDATE", "DELETE", "SELECT", "MERGE", "UPSERT", "CRUD", "NULL", "AND", "NOT", "SQL", "DDL",
+             "CSV", "API", "JOIN", "WHERE", "COMMIT", "ROLLBACK", "LOCK", "TRUNCATE"}
+
+
+def ddl(root):
+    """{テーブル名: {列名}}。db/schema/*.sql の CREATE TABLE から読む（ファイル名もテーブル名として扱う）"""
+    out = {}
+    for p in sorted(glob.glob(os.path.join(root, "db", "schema", "*.sql"))):
+        out.setdefault(os.path.splitext(os.path.basename(p))[0].upper(), set())
+        for m in re.finditer(r"CREATE\s+TABLE\s+(?:\w+\.)?\"?(\w+)\"?\s*\((.*?)\n\s*\)\s*;", _read(p), re.S | re.I):
+            cols = {c.upper() for c in re.findall(r"^\s*\"?(\w+)\"?\s+\w", m.group(2), re.M)}
+            out.setdefault(m.group(1).upper(), set()).update(cols - {"CONSTRAINT", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK"})
+    return out
+
+
+def crud(root, folder, cat=None, w=None):
+    """({テーブル名: [行ID]}, [(行ID, DDL にない名前)])。CRUD の行の大文字の名前を、DDL のテーブル・列と突き合わせる"""
+    cat = cat or catalog.load(folder)
+    w = w or written(folder, cat)
+    tables = ddl(root)
+    cols = set().union(*tables.values()) if tables else set()
+    uses, unknown = {}, []
+    for inst, (_, _, live) in sorted(w.items()):
+        for lid, item, text in live:
+            if item != CRUD_ITEM:
+                continue
+            for name in dict.fromkeys(NAME_RE.findall(text)):
+                if name in tables:
+                    uses.setdefault(name, []).append(lid)
+                elif name in cols or name in NOT_TABLE or re.fullmatch(r"[A-Z]{1,2}\d+[A-Z]?", name):
+                    continue  # 列名・SQL の言葉・ジョブ ID（J110 など）
+                else:
+                    unknown.append((lid, name))
+    return uses, unknown

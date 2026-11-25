@@ -187,6 +187,11 @@ def check_gaps(cat, folder):
                   "正しいパスに直してください（転記で作られる要件・作業一覧のファイルと、書類一覧のテーブルの DDL はまだなくてもよい）")
         else:
             warn(rel, f"{lid} が指す {path} がまだありません")
+    for lid, name in gaps.crud(ROOT, folder, cat, w)[1]:
+        inst = lid.split("/")[0]
+        rel = os.path.relpath(os.path.join(folder, files[inst]), ROOT) if inst in files else lid
+        warn(rel, f"{lid}（CRUD）の {name} が DDL にありません。テーブルなら db/schema/{name}.sql を作り、"
+                  "列なら DDL に足し、書き間違いなら直してください")
 
 
 def check_registry(cat, reg_rel, files, docs):

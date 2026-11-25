@@ -21,7 +21,7 @@ python3 - "$w/docs/design/ID設計.md" "$ROOT" <<'EOF'
 import sys
 sys.path.insert(0, sys.argv[2] + "/scripts/design"); import catalog
 d = catalog.read_snapshot(sys.argv[1])
-d["機能一覧"] = [{"機能": "予約取消", "画面": "予約取消画面", "ジョブ": "", "IF": "", "帳票": "", "テーブル": "RESERVE", "説明": ""}]
+d["機能一覧"] = [{"機能": "予約取消", "画面": "予約取消画面", "ジョブ": "", "IF": "", "帳票": "", "説明": ""}]
 catalog.write_snapshot(d, sys.argv[1])
 EOF
 out=$(run --local)
