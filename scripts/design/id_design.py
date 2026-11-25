@@ -1,6 +1,6 @@
 """ID 設計の原本（docs/design/ID設計.xlsx）を使う作業をまとめたコマンド。人が実行する（openpyxl が要る）。
 
-    python3 scripts/design/id_design.py list       # 機能一覧と DDL から書類一覧を作り直す（番号は保ち、新しい書類だけ末尾の番号を振る）
+    python3 scripts/design/id_design.py list       # 機能一覧と、もとになる設計書の行から書類一覧を作り直す（番号は保ち、新しい書類だけ末尾の番号を振る）
     python3 scripts/design/id_design.py scaffold   # 書類一覧で「書く」にした書類のうち、まだないものの設計書ファイルを作る（見出しだけのひな形）
     python3 scripts/design/id_design.py progress   # 進捗・網羅状況のシートを作り直す（先に git fetch。統合先のブランチと比べて完了かを決める）
     python3 scripts/design/id_design.py export     # 書き出し（ID設計.md）を作る。--check なら食い違いを確かめるだけ
@@ -10,7 +10,7 @@
               （origin/HEAD）、それもなければ origin/main。develop に統合する案件なら --base origin/develop）
 
 list・scaffold・progress は最後に export も行う。書類一覧の番号は付けたら変えず、機能一覧から外れた書類も消さずに「廃止」にする。
-テーブル設計書は機能一覧ではなく DDL（db/schema/*.sql）のファイルごとに作る（DDL に書けない決定を書く書類なので、DDL の後に書く）。
+どの書類が1枚ずつできるかは、書類の種類の「もと」で決まる（機能一覧の列か、設計書の見出しの行。テーブル設計書は S-20 のテーブル一覧の行ごと）。
 書類の種類の「状態」が「廃止」（型でやめた）か「使わない」（この案件で作らないと決めた）の種類は、書類一覧に作らない。
 """
 import argparse
@@ -24,44 +24,63 @@ import catalog  # noqa: E402
 
 ROOT = os.environ.get("TAZUNA_ROOT") or os.getcwd()
 
-# 書類の種類の「作る単位」→ 機能一覧のどの列から書類実体を作るか（テーブルは機能一覧ではなく DDL のファイルから）
-UNIT = [("システムに1つ", None), ("テーブルごと", "DDL"), ("画面ごと", "画面"), ("ジョブごと", "ジョブ"),
-        ("外部IFごと", "IF"), ("帳票", "帳票"), ("機能ごと", "機能")]
+# 書類の種類の「もと」（何が決まると、その書類が1枚ずつできるか）
+#   空                … システムに1つ（最初の list からある）
+#   機能一覧:<列>      … 機能一覧のその列に書いた名前ごと（機能一覧:機能 は機能ごと）
+#   <書類ID>/<設計項目> … その書類のその見出しの行ごと。行の先頭の英字の名前を書類の名前にする（例 S-20/D-05020 テーブル一覧）
+# 「もと」が空の書類の種類は、古い Excel のために「作る単位」から決める
+UNIT = [("システムに1つ", ""), ("テーブルごと", "S-20/D-05020"), ("画面ごと", "機能一覧:画面"), ("ジョブごと", "機能一覧:ジョブ"),
+        ("外部IFごと", "機能一覧:IF"), ("帳票", "機能一覧:帳票"), ("機能ごと", "機能一覧:機能")]
+SOURCE_RE = re.compile(r"^(S-\d{2})/(D-\d{5})$")
+NAME_HEAD_RE = re.compile(r"^\s*([A-Za-z][A-Za-z0-9_]*)")
 
 
-def unit_column(unit):
-    for prefix, col in UNIT:
-        if unit.startswith(prefix):
-            return col
-    return None
+def source_of(t):
+    s = (t.get("もと") or "").strip()
+    if s:
+        return s
+    for prefix, src in UNIT:
+        if (t.get("作る単位") or "").startswith(prefix):
+            return src
+    return ""
 
 
-def ddl_tables(root=None):
-    """db/schema/*.sql のファイル名（拡張子なし）。テーブル設計書はこのファイルごとに作る"""
-    import glob
-    return sorted(os.path.splitext(os.path.basename(p))[0]
-                  for p in glob.glob(os.path.join(root or ROOT, "db", "schema", "*.sql")))
+def source_names(folder, doc, item):
+    """設計書 doc（すべての書類実体）の見出し item の行の先頭の名前。[(名前, 行ID)]（書いた順、重複なし）"""
+    out, seen = [], set()
+    for inst, name in sorted(catalog.design_files(folder).items()):
+        if not inst.startswith(doc + "-"):
+            continue
+        _, lines, _ = catalog.parse_design(open(os.path.join(folder, name), encoding="utf-8").read())
+        for _, n, text, under in lines:
+            m = NAME_HEAD_RE.match(text or "")
+            if under == item and n and m and not text.startswith("（廃止）") and m.group(1) not in seen:
+                seen.add(m.group(1))
+                out.append((m.group(1), catalog.line_id(inst, item, n)))
+    return out
 
 
-def derive(data, root=None):
-    """機能一覧と DDL から、あるべき書類実体を作る。[(書類ID, 名前, [機能の処理設計書の名前...])]（機能一覧の順）
-    テーブル設計書は、DDL（db/schema/*.sql）のファイルごとに作り、機能は持たない（テーブルと機能のつながりは、処理設計書の CRUD の行）"""
+def derive(data, design=None):
+    """機能一覧と、もとになる設計書の行から、あるべき書類実体を作る。[(書類ID, 名前, [機能の処理設計書の名前...])]
+    テーブル設計書は S-20 データモデル設計書の「テーブル一覧」の行ごとに作り、機能は持たない（テーブルと機能のつながりは、処理設計書の CRUD の行）"""
+    design = design or os.path.join(ROOT, "docs", "design")
     out = []
     funcs = data["機能一覧"]
     for t in data["書類の種類"]:
         if (t.get("状態") or "").strip() in ("廃止", "使わない"):
             continue
-        doc, col = t["書類ID"], unit_column(t["作る単位"])
+        doc, src = t["書類ID"], source_of(t)
         center = (t.get("役割") or "").strip() == "機能の中心"
-        if col is None:
+        m = SOURCE_RE.match(src)
+        if not src:
             out.append((doc, t["書類名"], []))
-        elif col == "DDL":
-            out += [(doc, name, []) for name in ddl_tables(root)]
-        elif col == "機能":
+        elif m:
+            out += [(doc, name, []) for name, _ in source_names(design, m.group(1), m.group(2))]
+        elif src == "機能一覧:機能":
             for f in funcs:
                 out.append((doc, f["機能"], [] if center else [f["機能"]]))
-        else:
-            seen = {}
+        elif src.startswith("機能一覧:"):
+            col, seen = src.split(":", 1)[1], {}
             for f in funcs:
                 for name in catalog.split(f.get(col)):
                     seen.setdefault(name, []).append(f["機能"])
@@ -69,12 +88,12 @@ def derive(data, root=None):
     return out
 
 
-def cmd_list(data):
+def cmd_list(data, design=None):
     old = {(r["書類ID"], r["名前"]): r for r in data["書類一覧"]}
     nums = {}
     for r in data["書類一覧"]:
         nums[r["書類ID"]] = max(nums.get(r["書類ID"], 0), int(r["書類実体ID"][-3:]))
-    want = derive(data)
+    want = derive(data, design)
     # 機能の中心の書類（処理設計書など）の書類実体ID（機能の名前 → 書類実体ID）を先に決める
     rows, keys = {}, set()
     for doc, name, _ in want:
@@ -89,7 +108,6 @@ def cmd_list(data):
             rows[key] = {"書類実体ID": f"{doc}-{nums[doc]:03d}", "書類ID": doc, "名前": name, "作成": "書く", "理由": ""}
     centers = {t["書類ID"] for t in data["書類の種類"] if (t.get("役割") or "").strip() == "機能の中心"}
     state = {t["書類ID"]: (t.get("状態") or "").strip() for t in data["書類の種類"]}
-    unit = {t["書類ID"]: t.get("作る単位") or "" for t in data["書類の種類"]}
     s22 = {name: r["書類実体ID"] for (doc, name), r in rows.items() if doc in centers}
     docname = {t["書類ID"]: t["書類名"] for t in data["書類の種類"]}
     for doc, name, fs in want:
@@ -101,7 +119,8 @@ def cmd_list(data):
             r = dict(r)
             r["作成"] = "廃止"
             why = {"廃止": "書類の種類を廃止した", "使わない": "この案件では使わない書類の種類にした"}
-            gone = "DDL（db/schema）から外れた" if unit_column(unit.get(key[0], "")) == "DDL" else "機能一覧から外れた"
+            src = {t["書類ID"]: source_of(t) for t in data["書類の種類"]}.get(key[0], "")
+            gone = f"もと（{src}）から外れた" if SOURCE_RE.match(src) else "機能一覧から外れた"
             r["理由"] = r["理由"] or why.get(state.get(key[0]), gone)
             rows[key] = r
     data["書類一覧"] = sorted(rows.values(), key=lambda r: r["書類実体ID"])
@@ -119,29 +138,97 @@ OWNER = {
     "機能一覧": {"*": "人"},
     "書類一覧": {"作成": "人", "理由": "人", "*": "ツール"},
     "進捗": {"*": "ツール"}, "網羅状況": {"*": "ツール"}, "集計": {"*": "ツール"},
-    "書類の種類": {"状態": "案件", "*": "型"}, "記載項目": {"記載": "案件", "*": "型"},
+    "書類の種類": {"状態": "案件", "もと": "案件", "*": "型"}, "記載項目": {"記載": "案件", "*": "型"},
     "振り分け表": {"*": "型"}, "振り分けルール": {"*": "型"}, "属性の判定基準": {"*": "型"},
 }
 LEGEND = "凡例"
 COLS_TEXT = {  # 列の色が付く場所（凡例に書く）
     "人": "機能一覧の全列、書類一覧の「作成」「理由」",
-    "案件": "書類の種類の「状態」（使う・使わない）、記載項目の「記載」（必須・該当時）",
+    "案件": "書類の種類の「状態」（使う・使わない）と「もと」、記載項目の「記載」（必須・該当時）",
     "ツール": "書類一覧の「作成」「理由」以外、進捗・網羅状況・集計の全列",
-    "型": "振り分け表・振り分けルール・属性の判定基準の全列、書類の種類の「状態」以外、記載項目の「記載」以外",
+    "型": "振り分け表・振り分けルール・属性の判定基準の全列、書類の種類の「状態」「もと」以外、記載項目の「記載」以外",
 }
-STEPS = [
-    ("1", "何を作るか決める：書類の種類の「状態」で、この案件で作らない書類の種類を「使わない」にする（理由は PR に書く）", "人"),
-    ("2", "何を書くか決める：記載項目の「記載」（必須・該当時）を、案件に合わせて直す（理由は PR に書く）", "人"),
-    ("3", "機能一覧に、外部設計で決まっている範囲で、1機能1行で、使う画面・ジョブ・IF・帳票と説明を書く（テーブルは書かない。"
-          "テーブル設計書は DDL から作り、機能とテーブルのつながりは処理設計書の CRUD に書く）"
-          "（1つのセルに複数書くときは「、」で区切る）。空のままでも 4 に進める（システムに1つの書類だけが並ぶ）", "人"),
-    ("4", "python3 scripts/design/id_design.py list で書類一覧を作る（1〜3 から、作る書類の一覧と番号ができる）。"
-          "種類としては使うが、この1つだけ作らないものは「作成」を「書かない」にし、「理由」を書く", "ツール → 人"),
-    ("5", "python3 scripts/design/id_design.py scaffold で設計書のひな形を作り、設計書を書く", "ツール → 人"),
-    ("6", "設計が進んで画面などが増えたら機能一覧に足し、データモデル設計書でテーブルを決めて DDL（db/schema）を書いたら、list をやり直す"
-          "（書類の番号は変わらず、新しい書類が末尾に増える。外した書類や、使わないにした種類の書類は、消えずに「廃止」になる）", "人 → ツール"),
-    ("7", "python3 scripts/design/id_design.py progress で進捗・網羅状況を作り直す", "ツール"),
+PROCESS_SHEET = "進め方"
+PROCESS = [  # (段階, 順, やること, 誰が, 使うもの, 次へ進む目安)
+    ("準備（ID 設計）", "1", "何を作るか決める。書類の種類の「状態」で、この案件で作らない種類を「使わない」にする。"
+     "「もと」で、どの書類が何が決まると1枚ずつできるかを確かめる（下の表）", "案件リーダー", "書類の種類", "PR でマージ"),
+    ("", "2", "何を書くか決める。記載項目の「記載」（必須・該当時）を案件に合わせる", "案件リーダー", "記載項目", "PR でマージ"),
+    ("", "3", "機能一覧に、外部設計で決まっている範囲で、機能と画面・ジョブ・IF・帳票と説明を書く（全部そろうのを待たない）",
+     "社員", "機能一覧", "—"),
+    ("", "4", "書類一覧を作る。システムに1つの書類と、もとが決まっている書類が並ぶ。1枚ずつ「作成」（書く・書かない＋理由）を決める",
+     "社員", "id_design.py list、書類一覧", "ID設計.xlsx と ID設計.md を PR でマージ"),
+    ("", "5", "設計書のひな形を作る", "社員", "id_design.py scaffold", "—"),
+    ("設計", "6", "共通の書類を書く（方式・画面共通・メッセージ・セキュリティ・コード定義など）。★ が出たら、共通の方針・機能に任せる旨・該当なし（理由）のどれかを先に書く",
+     "社員・協力会社", "docs/design/、案内役", "必須の見出しが埋まる"),
+    ("", "7", "データモデル設計書（S-20）でテーブル一覧（D-05020）を決める。マージしたら list と scaffold をやり直すと、テーブル設計書が1枚ずつできる",
+     "社員・DBA", "S-20、id_design.py list・scaffold", "テーブル一覧を PR でマージ"),
+    ("", "8", "テーブル一覧の1行ごとに DDL（db/schema/<テーブル>.sql）を書く。全列に説明、区分値は CHECK と設計書の行ID。テーブル設計書（S-16）には DDL に書けない決定だけを書く",
+     "協力会社・DBA", "db/schema/、S-16", "Lint の「DDL がない」「一覧にない」が消える"),
+    ("", "9", "機能の書類を書く（処理・画面・ジョブ・IF・帳票・テスト仕様）。CRUD にはテーブル一覧の名前を使う。画面などが増えたら機能一覧に足して 4 をやり直す",
+     "社員・協力会社", "処理設計書ほか", "必須の見出しが埋まる"),
+    ("", "10", "設計の PR をレビューしてマージする。食い違い・未定義・抜けはスキル base-design-review で見る。業務の正しさは人が見る",
+     "社員", "base-design-review、review_pack.py", "承認してマージ。id_design.py progress で状態を確かめる"),
+    ("転記", "11", "機能の書類がそろったら、要件・テスト仕様・作業一覧へ転記し、転記の PR で確かめてマージする", "社員",
+     "transcribe.py", "進捗の「要転記」が消える"),
+    ("実装", "12", "要件ごとに issue を作り（下書きは next.py --issue REQ-xxxxx）、Copilot か担当者に割り当てる", "案件リーダー",
+     "next.py", "—"),
+    ("", "13", "実装の PR を出す。本文に「対象要件:」、テストに行IDの @Tag、対応しない行は「未対応:」、設計書を根拠にした行は「設計書から:」",
+     "Copilot・協力会社", "AGENTS.md、base-task-workflow", "CI が通る"),
+    ("", "14", "PR レポートを見てレビューし、マージする", "社員", "PR レポート", "マージ"),
+    ("ずっと", "15", "「次は何？」と案内役に聞き、日次レポートで止まっているもの・つながっていないものを見る。設計を変えるときは設計書から（6〜11）",
+     "全員", "base-navigator、日次レポート", "—"),
 ]
+
+
+def when_ready(src, cat_docs, items):
+    """書類の種類の「もと」を、いつ書類ができるかの文にする"""
+    m = SOURCE_RE.match(src)
+    if not src:
+        return "最初の list から（システムに1つ）"
+    if m:
+        doc = cat_docs.get(m.group(1), m.group(1))
+        return f"{m.group(1)} {doc}の「{m.group(2)} {items.get(m.group(2), '')}」に行を書いて、list をやり直したとき（行ごとに1枚）"
+    col = src.split(":", 1)[1]
+    return "機能一覧に機能を書いて、list をやり直したとき（機能ごとに1枚）" if col == "機能" else \
+        f"機能一覧の「{col}」に名前を書いて、list をやり直したとき（名前ごとに1枚）"
+
+
+def process_sheet(wb):
+    """進め方のシート（ID 設計から実装まで）を作り直す。前後関係の表は書類の種類のシートから作る"""
+    from openpyxl.styles import Alignment, Font
+    if PROCESS_SHEET in wb.sheetnames:
+        del wb[PROCESS_SHEET]
+    ws = wb.create_sheet(PROCESS_SHEET, 1 if LEGEND in wb.sheetnames else 0)
+    bold, wrap = Font(bold=True), Alignment(wrap_text=True, vertical="top")
+    ws.append(["ID 設計・設計・転記・実装の進め方（id_design.py が作る。手で直さない）"])
+    ws.append([])
+    ws.append(["段階", "順", "やること", "誰が", "使うもの", "次へ進む目安"])
+    head = ws.max_row
+    for row in PROCESS:
+        ws.append(list(row))
+    ws.append([])
+    ws.append(["書類ができる前後関係（書類の種類の「もと」から作る）"])
+    ws.cell(ws.max_row, 1).font = bold
+    ws.append(["書類ID", "書類名", "もと", "書類一覧にできるとき", "状態", ""])
+    head2 = ws.max_row
+    kinds = [dict(zip([c.value for c in wb["書類の種類"][1]], r)) for r in wb["書類の種類"].iter_rows(min_row=2, values_only=True)] \
+        if "書類の種類" in wb.sheetnames else []
+    kinds = [k for k in kinds if k.get("書類ID")]
+    names = {k["書類ID"]: k.get("書類名") or "" for k in kinds}
+    items = {r[0]: r[2] for r in wb["振り分け表"].iter_rows(min_row=2, values_only=True) if r and r[0]} \
+        if "振り分け表" in wb.sheetnames else {}
+    for k in kinds:
+        src = source_of({key: (v if isinstance(v, str) else "") for key, v in k.items()})
+        ws.append([k["書類ID"], names[k["書類ID"]], src or "—", when_ready(src, names, items), k.get("状態") or ""])
+    for r in (1, head, head2):
+        for c in range(1, 7):
+            ws.cell(r, c).font = bold
+    for col, width in zip("ABCDEF", (14, 10, 60, 16, 28, 34)):
+        ws.column_dimensions[col].width = width
+    for row in ws.iter_rows(min_row=head):
+        for c in row:
+            c.alignment = wrap
+    ws.freeze_panes = ws.cell(head + 1, 1)
 
 
 
@@ -178,11 +265,8 @@ def paint(wb):
         ws.append([key, WHO[key][2], COLS_TEXT[key]])
         ws.cell(ws.max_row, 1).fill = fill[key]
     ws.append([])
-    ws.append(["進め方", "", "誰が"])
-    steps = ws.max_row
-    for n, text, who in STEPS:
-        ws.append([n, text, who])
-    for r in (head, steps):
+    ws.append(["進め方", f"「{PROCESS_SHEET}」のシートを見る（ID 設計から実装までの手順と、書類ができる前後関係）", ""])
+    for r in (head, ws.max_row):
         for c in range(1, 4):
             ws.cell(r, c).font = bold
     ws.cell(1, 1).font = bold
@@ -193,6 +277,7 @@ def paint(wb):
         for c in row[1:3]:
             c.alignment = Alignment(wrap_text=True, vertical="top")
     ws.sheet_properties.tabColor = None
+    process_sheet(wb)
     wb.active = wb.sheetnames.index("機能一覧") if "機能一覧" in wb.sheetnames else 0
 
 
@@ -361,7 +446,7 @@ def main():
         print("色を付けました（凡例のシート）")
         return 0
     if a.command == "list":
-        data = cmd_list(data)
+        data = cmd_list(data, a.design)
         write_sheet(xlsx, "書類一覧", catalog.TABLES[1][1], data["書類一覧"])
         print(f"書類一覧: {len(data['書類一覧'])} 件")
     elif a.command == "scaffold":

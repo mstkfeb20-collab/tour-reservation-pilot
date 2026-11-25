@@ -2,8 +2,10 @@
 
 stars:   ★ 共通の書類の必須の見出しが空なのに、機能の書類が同じ設計項目を決めている
 missing_refs: 設計書の行が指すファイルが実在しない（転記で作られる要件・作業一覧のファイルと、書類一覧のテーブルの DDL は、まだなくてもよい）
-crud:    処理設計書の CRUD（D-05006）の行に出てくるテーブル名を DDL（db/schema）と突き合わせる。
-         テーブルごとに、どの行が触るか（逆引き）と、DDL のテーブルにも列にもない名前を返す
+tables:  S-20 データモデル設計書の「テーブル一覧」（D-05020）の行の先頭の名前（テーブル設計書はここから作る）
+crud:    処理設計書の CRUD（D-05006）の行に出てくる名前を、テーブル一覧・DDL（db/schema）と突き合わせる。
+         テーブルごとに、どの行が触るか（逆引き）と、テーブルにも列にもない名前を返す
+table_vs_ddl: テーブル一覧にあるのに DDL がないもの、DDL があるのにテーブル一覧にないもの
 """
 import glob
 import os
@@ -75,6 +77,7 @@ def missing_refs(root, folder, cat=None, w=None):
 
 
 CRUD_ITEM = "D-05006"
+TABLE_DOC, TABLE_ITEM = "S-20", "D-05020"
 NAME_RE = re.compile(r"(?<![A-Za-z0-9_])[A-Z][A-Z0-9_]{2,}(?![A-Za-z0-9_])")
 NOT_TABLE = {"INSERT", "UPDATE", "DELETE", "SELECT", "MERGE", "UPSERT", "CRUD", "NULL", "AND", "NOT", "SQL", "DDL",
              "CSV", "API", "JOIN", "WHERE", "COMMIT", "ROLLBACK", "LOCK", "TRUNCATE"}
@@ -91,19 +94,43 @@ def ddl(root):
     return out
 
 
+def tables(folder, w=None):
+    """{テーブル名: 行ID}（S-20 のテーブル一覧の行の先頭の名前。大文字にそろえる）"""
+    w = w or written(folder)
+    out = {}
+    for inst, (_, _, live) in sorted(w.items()):
+        if inst.startswith(TABLE_DOC + "-"):
+            for lid, item, text in live:
+                m = re.match(r"\s*([A-Za-z][A-Za-z0-9_]*)", text)
+                if item == TABLE_ITEM and m:
+                    out.setdefault(m.group(1).upper(), lid)
+    return out
+
+
+def table_vs_ddl(root, folder, w=None):
+    """([(行ID, テーブル一覧にあるのに DDL がない名前)], [DDL があるのにテーブル一覧にない名前])。テーブル一覧がまだなければ ([], [])"""
+    listed = tables(folder, w)
+    if not listed:
+        return [], []
+    have = ddl(root)
+    return ([(lid, n) for n, lid in listed.items() if n not in have],
+            sorted(n for n in have if n not in listed))
+
+
 def crud(root, folder, cat=None, w=None):
-    """({テーブル名: [行ID]}, [(行ID, DDL にない名前)])。CRUD の行の大文字の名前を、DDL のテーブル・列と突き合わせる"""
+    """({テーブル名: [行ID]}, [(行ID, テーブル一覧にも DDL にもない名前)])。CRUD の行の大文字の名前を、テーブル一覧・DDL のテーブルと列に突き合わせる"""
     cat = cat or catalog.load(folder)
     w = w or written(folder, cat)
-    tables = ddl(root)
-    cols = set().union(*tables.values()) if tables else set()
+    have = ddl(root)
+    known = set(have) | set(tables(folder, w))
+    cols = set().union(*have.values()) if have else set()
     uses, unknown = {}, []
     for inst, (_, _, live) in sorted(w.items()):
         for lid, item, text in live:
             if item != CRUD_ITEM:
                 continue
             for name in dict.fromkeys(NAME_RE.findall(text)):
-                if name in tables:
+                if name in known:
                     uses.setdefault(name, []).append(lid)
                 elif name in cols or name in NOT_TABLE or re.fullmatch(r"[A-Z]{1,2}\d+[A-Z]?", name):
                     continue  # 列名・SQL の言葉・ジョブ ID（J110 など）

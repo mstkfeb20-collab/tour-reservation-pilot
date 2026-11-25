@@ -47,26 +47,32 @@ row() { grep -E "^\| $1 " "$md"; }
 
 edit func "予約登録|予約入力||||"
 edit func "振込データ取込||J110|IF-11||"
-mkdir -p "$w/db/schema"; echo "CREATE TABLE TRANSFER_IMPORT (ID CHAR(1)\n);" > "$w/db/schema/TRANSFER_IMPORT.sql"
+tables() { printf '# S-20-001 データモデル設計書\n\n## D-05020 テーブル一覧\n\n%s' "$1" > "$w/docs/design/S-20-001_データモデル設計書.md"; }
+tables '- [1] TRANSFER_IMPORT 振込取込結果（トランザクション）
+'
 run list
 row "S-22-001" | grep -q '予約登録' && row "S-22-002" | grep -q '振込データ取込' && ok || ng "機能ごとに処理設計書ができる"
 row "S-23-001" | grep -q 'J110 | S-22-002' && ok || ng "ジョブ設計書の機能は、そのジョブを使う処理設計書"
 row "S-21-001" | grep -q '予約入力 | S-22-001' && ok || ng "役割が機能の中心でない書類（画面設計書）は、機能の処理設計書に属する"
-row "S-16-001" | grep -q 'TRANSFER_IMPORT |  |' && ok || ng "テーブル設計書は DDL のファイルごとにでき、機能を持たない"
+row "S-16-001" | grep -q 'TRANSFER_IMPORT |  |' && ok || ng "テーブル設計書は S-20 のテーブル一覧の行ごとにでき、機能を持たない"
 row "S-11-001" | grep -q '方式設計書' && ok || ng "システムに1つの書類は自動で並ぶ"
 row "S-20-001" | grep -q 'データモデル設計書' && ok || ng "データモデル設計書が並ぶ"
 [ -z "$(row 'S-10-001')" ] && ok || ng "状態が廃止の書類の種類は並ばない"
 edit skip "S-33-001"
 edit func "ツアー検索|ツアー検索||||"
-echo "CREATE TABLE TOURINFO (ID CHAR(1)\n);" > "$w/db/schema/TOURINFO.sql"
+tables '- [1] TRANSFER_IMPORT 振込取込結果（トランザクション）
+- [2] TOURINFO ツアー（マスタ）
+'
 edit delfunc "予約登録"
 run list
 row "S-22-002" | grep -q '振込データ取込' && row "S-22-003" | grep -q 'ツアー検索' && ok || ng "番号は保たれ、新しい機能は末尾の番号"
 row "S-22-001" | grep -q '廃止' && ok || ng "機能一覧から外れた書類は消さずに廃止"
 row "S-33-001" | grep -q '書かない | 要らない' && ok || ng "人が付けた「書かない」と理由は残る"
-row "S-16-002" | grep -q 'TOURINFO' && ok || ng "DDL を足すとテーブル設計書が末尾の番号で増える"
-rm "$w/db/schema/TRANSFER_IMPORT.sql"; run list
-row "S-16-001" | grep -q '廃止 | DDL（db/schema）から外れた' && ok || ng "DDL を消したテーブルの設計書は消さずに廃止"
+row "S-16-002" | grep -q 'TOURINFO' && ok || ng "テーブル一覧に足すとテーブル設計書が末尾の番号で増える"
+tables '- [1] （廃止）振込取込結果は別システムに移した
+- [2] TOURINFO ツアー（マスタ）
+'; run list
+row "S-16-001" | grep -q '廃止 | もと（S-20/D-05020）から外れた' && ok || ng "テーブル一覧で廃止にしたテーブルの設計書は消さずに廃止"
 edit retire "S-31"
 run list
 row "S-31-001" | grep -q '廃止 | 書類の種類を廃止した' && ok || ng "書類の種類を廃止すると、その書類は消さずに廃止"
@@ -80,6 +86,16 @@ f="$w/docs/design/S-23-001_J110.md"
 run export --check && ok || ng "list・scaffold の後は書き出しが Excel と一致"
 edit func "予約照会|予約照会||||"
 run export --check && ng "Excel だけ直すと書き出しと食い違う" || ok
+# 進め方のシート（手順と、書類の種類の「もと」から作る前後関係）
+procs=$(python3 - "$x" <<'PY'
+import sys, openpyxl
+wb = openpyxl.load_workbook(sys.argv[1]); ws = wb["進め方"]
+rows = [r for r in ws.iter_rows(values_only=True)]
+print(wb.sheetnames[1], any(r[0] == "S-16" and r[2] == "S-20/D-05020" and "D-05020 テーブル一覧" in (r[3] or "") for r in rows),
+      any(r[1] == "13" and "未対応" in (r[2] or "") for r in rows))
+PY
+)
+[ "$procs" = "進め方 True True" ] && ok || ng "進め方のシート（手順と前後関係）: $procs"
 # 誰が埋める列かを色で示す（list で作り直しても消えない）
 colors=$(python3 - "$w/docs/design/ID設計.xlsx" <<'PY'
 import sys, openpyxl

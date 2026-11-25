@@ -89,11 +89,11 @@ def local_state():
     # 機能一覧と書類一覧のずれ
     sys.path.insert(0, os.path.join(HERE, "..", "design"))
     import id_design  # noqa: E402
-    want = {(doc, name) for doc, name, _ in id_design.derive(cat.data, ROOT)}
+    want = {(doc, name) for doc, name, _ in id_design.derive(cat.data, DESIGN)}
     have = {(r["書類ID"], r["名前"]) for r in cat.instances.values() if r["作成"] != "廃止"}
     if want - have or have - want:
         todos.append(Todo(70, "社員", "書類一覧を作り直す",
-                          f"機能一覧・DDL と書類一覧が合っていません（足りない {len(want - have)}・余分 {len(have - want)}）",
+                          f"機能一覧・もとになる設計書と書類一覧が合っていません（足りない {len(want - have)}・余分 {len(have - want)}）",
                           "python3 scripts/design/id_design.py list を実行し、増えた書類の「作成」（書く・書かない）を決める"))
 
     files = catalog.design_files(DESIGN)
@@ -126,15 +126,26 @@ def local_state():
                              if first else ""),
                           "\n".join(r[2] for r in rows)))
 
-    # CRUD の行に出てくるのに DDL がないテーブル（gaps.py。Lint も警告する）
+    # もとになる設計書の行がまだない書類の種類（例: S-20 のテーブル一覧が空なら、テーブル設計書が1枚もできない）
     import gaps  # noqa: E402
-    nodll = gaps.crud(ROOT, DESIGN, cat)[1]
-    if nodll:
-        todos.append(Todo(45, "社員", f"CRUD に出てくる名前の DDL を作る（{len(nodll)} 件）",
-                          "処理設計書の CRUD の行が、DDL（db/schema）にないテーブルか列を使っています: "
-                          + "、".join(f"{n}（{lid}）" for lid, n in nodll[:6]),
-                          "テーブルなら db/schema/<テーブル名>.sql を作り（列の説明も書く）、python3 scripts/design/id_design.py list で"
-                          "テーブル設計書を増やす。列なら DDL に足す。書き間違いなら CRUD の行を直す"))
+    for t in cat.data.get("書類の種類", []):
+        m = id_design.SOURCE_RE.match(id_design.source_of(t))
+        if m and (t.get("状態") or "").strip() not in ("廃止", "使わない") and not id_design.source_names(DESIGN, m.group(1), m.group(2)):
+            src_doc = cat.docs.get(m.group(1), {}).get("書類名", m.group(1))
+            src_item = cat.items.get(m.group(2), {}).get("設計項目", m.group(2))
+            todos.append(Todo(55, "社員", f"{src_doc}の「{src_item}」を書く（{t['書類名']}はここから作る）",
+                              f"{t['書類名']}は、{m.group(1)} の {m.group(2)} {src_item} の行ごとに1枚できます。まだ1行もありません",
+                              f"{m.group(1)} の設計書の「## {m.group(2)} {src_item}」に、1行1つ、行の先頭に名前を書く。"
+                              "設計の PR をマージしたら python3 scripts/design/id_design.py list で書類一覧を作り直す"))
+    nodll, unlisted = gaps.table_vs_ddl(ROOT, DESIGN)
+    unknown = gaps.crud(ROOT, DESIGN, cat)[1]
+    if nodll or unlisted or unknown:
+        what = ([f"DDL がない {n}（{lid}）" for lid, n in nodll] + [f"テーブル一覧にない DDL {n}" for n in unlisted]
+                + [f"CRUD の {n}（{lid}）がテーブル一覧にも DDL の列にもない" for lid, n in unknown])
+        todos.append(Todo(45, "社員", f"テーブル一覧・DDL・CRUD をそろえる（{len(what)} 件）",
+                          "、".join(what[:6]) + ("…" if len(what) > 6 else ""),
+                          "テーブル一覧（S-20 の D-05020）が正。一覧にあるテーブルは db/schema/<テーブル名>.sql を書く（列の説明も）。"
+                          "一覧にない DDL は一覧に足すか消す。CRUD の名前がテーブルなら一覧に足し、列なら DDL に足す"))
 
     # 転記
     sys.path.insert(0, os.path.join(HERE, "..", "design"))

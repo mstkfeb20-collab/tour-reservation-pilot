@@ -165,9 +165,13 @@ rm -rf "$d"
 r=$(mktemp -d); d="$r/docs/design"; mkdir -p "$d" "$r/db/schema"
 printf 'CREATE TABLE RESERVE (\n    RESERVE_NO CHAR(13) NOT NULL,\n    VERSION NUMBER(9) NOT NULL,\n    CONSTRAINT PK_RESERVE PRIMARY KEY (RESERVE_NO)\n);\n' > "$r/db/schema/RESERVE.sql"
 printf '# S-22-001 処理設計書：予約取消\n\n## D-05006 CRUD\n\n- [1] RESERVE の VERSION を UPDATE する\n- [2] TOURINFO を読み、残席を更新する\n- [3] J110 とは同時に動かない\n' > "$d/S-22-001_予約取消.md"
-python3 "$SNAP" "$d/ID設計.md" "S-22-001|予約取消|"
+printf '# S-20-001 データモデル設計書\n\n## D-05020 テーブル一覧\n\n- [1] RESERVE 予約（トランザクション）\n- [2] MEMBER 会員（マスタ）\n' > "$d/S-20-001_データモデル設計書.md"
+printf 'CREATE TABLE OLD_LOG (\n    ID CHAR(1)\n);\n' > "$r/db/schema/OLD_LOG.sql"
+python3 "$SNAP" "$d/ID設計.md" "S-22-001|予約取消|" "S-20-001|データモデル設計書|"
 out=$(TAZUNA_ROOT="$r" python3 "$PY" "$d" 2>&1); rc=$?
-if [ "$rc" -eq 0 ] && grep -qF "S-22-001/D-05006/2（CRUD）の TOURINFO が DDL にありません" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: DDL にないテーブルを警告する"; echo "$out" | head -5; fi
+if [ "$rc" -eq 0 ] && grep -qF "S-22-001/D-05006/2（CRUD）の TOURINFO が、テーブル一覧（S-20 の D-05020）にも DDL の列にもありません" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: テーブル一覧にも DDL にもない CRUD の名前を警告する"; echo "$out" | head -5; fi
+if grep -qF "テーブル一覧にある MEMBER の DDL（db/schema/MEMBER.sql）がまだありません" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: テーブル一覧にあって DDL がないものを警告する"; fi
+if grep -qF "OLD_LOG が S-20 のテーブル一覧（D-05020）にありません" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: DDL があってテーブル一覧にないものを警告する"; fi
 if ! grep -qE "（CRUD）の (RESERVE|VERSION|UPDATE|J110) " <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: DDL のテーブル・列、SQL の言葉、ジョブ ID は警告しない"; fi
 out=$(cd "$r" && python3 -c "import sys; sys.path.insert(0, '$ROOT/scripts/design'); import gaps; print(gaps.crud('.', 'docs/design')[0])")
 if grep -qF "'RESERVE': ['S-22-001/D-05006/1']" <<<"$out"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "NG: テーブルから CRUD の行を逆引きできる: $out"; fi

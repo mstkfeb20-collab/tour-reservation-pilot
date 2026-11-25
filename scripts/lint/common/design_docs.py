@@ -190,8 +190,13 @@ def check_gaps(cat, folder):
     for lid, name in gaps.crud(ROOT, folder, cat, w)[1]:
         inst = lid.split("/")[0]
         rel = os.path.relpath(os.path.join(folder, files[inst]), ROOT) if inst in files else lid
-        warn(rel, f"{lid}（CRUD）の {name} が DDL にありません。テーブルなら db/schema/{name}.sql を作り、"
-                  "列なら DDL に足し、書き間違いなら直してください")
+        warn(rel, f"{lid}（CRUD）の {name} が、テーブル一覧（S-20 の D-05020）にも DDL の列にもありません。"
+                  "テーブルなら S-20 のテーブル一覧に足し、列なら DDL に足し、書き間違いなら直してください")
+    nodll, unlisted = gaps.table_vs_ddl(ROOT, folder, w)
+    for lid, name in nodll:
+        warn(lid, f"テーブル一覧にある {name} の DDL（db/schema/{name}.sql）がまだありません")
+    for name in unlisted:
+        warn(f"db/schema/{name}.sql", f"{name} が S-20 のテーブル一覧（D-05020）にありません。一覧に足すか、DDL を消してください")
 
 
 def check_registry(cat, reg_rel, files, docs):
