@@ -62,6 +62,7 @@ harness:
     - bash scripts/lint/tests/test-next.sh
     - bash scripts/lint/tests/test-review-pack.sh
     - bash scripts/lint/tests/test-gitlab.sh
+    - bash scripts/lint/tests/test-tazuna-update.sh
   artifacts:
     when: always
     paths: [lint-result.txt]

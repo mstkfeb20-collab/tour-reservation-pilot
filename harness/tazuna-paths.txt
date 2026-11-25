@@ -3,6 +3,10 @@
 #
 # 一覧にないファイル（AGENTS.md、CODEOWNERS、deny-commands.txt、protected-paths.txt、
 # docs/、proj-* スキル、lint/domain など）は案件のもの。取り込み時に上書きされない。
+#
+# docs/design/ID設計.xlsx（と書き出しの ID設計.md）は、型（書類の種類・記載項目・設計項目）と
+# 案件が書いたもの（機能一覧・書類一覧・状態・記載）が1つのファイルにあるので、取り込みで上書きしない。
+# 型が変わったときは、取り込みスクリプトが新しい Excel と型の差分を .tazuna-download/ に取り出す。案件の Excel に手で反映する。
 
 .github/skills/base-*
 .github/hooks/tazuna-guard.json
@@ -17,8 +21,6 @@ scripts/lint/common/*
 scripts/tazuna-update.sh
 harness/GUIDE.md
 harness/design-and-transcription.md
-docs/design/ID設計.xlsx
-docs/design/ID設計.md
 scripts/lint/tests/*
 scripts/design/*
 scripts/report/*
@@ -26,3 +28,5 @@ scripts/report/*
 harness/tazuna-paths.txt
 .gitlab-ci.yml
 .gitlab/merge_request_templates/Default.md
+.github/ISSUE_TEMPLATE/bug.md
+.gitlab/issue_templates/*

@@ -56,6 +56,8 @@ jobs:
         run: bash scripts/lint/tests/test-review-pack.sh
       - name: GitLab の道具の自己テスト
         run: bash scripts/lint/tests/test-gitlab.sh
+      - name: 型の取り込みの自己テスト
+        run: bash scripts/lint/tests/test-tazuna-update.sh
 
   build:
     name: ビルドとテスト

@@ -68,6 +68,107 @@ def platform():
     return "gitlab" if "gitlab" in url and "github" not in url else "github"
 
 
+# ---- 立ち上げ（テンプレートから作った直後） ----
+
+def repo_name():
+    url = gitlab._origin(ROOT).rstrip("/")
+    name = re.split(r"[/:]", url)[-1] if url else ""
+    return name[:-4] if name.endswith(".git") else name
+
+
+def setup_state():
+    """README の「新しいプロジェクトを始める」のうち、ファイルを見て分かるものが済んでいるか。tazuna 本体では何も出さない"""
+    todos = []
+    if os.path.isdir(os.path.join(ROOT, "_tazuna")):
+        if repo_name().lower() in ("", "tazuna"):
+            return todos  # tazuna 本体
+        todos.append(Todo(-4, "案件リーダー", "tazuna 本体専用のフォルダ _tazuna/ を消す",
+                          "このフォルダがあると、hooks が型のファイル（base スキル・共通 Lint・hooks・CI）の編集を許します",
+                          "git rm -r _tazuna してコミットする（README「新しいプロジェクトを始める」の 2）"))
+
+    def has(rel, text):
+        try:
+            return text in report.read(os.path.join(ROOT, rel))
+        except OSError:
+            return False
+    if has(".github/CODEOWNERS", "@your-org") or has(".gitlab/CODEOWNERS", "@your-org"):
+        todos.append(Todo(-3, "案件リーダー", "CODEOWNERS の承認者を実際のチームにする",
+                          "@your-org のままでは、設計書・要件・型の変更を誰が承認するかが決まりません",
+                          "CODEOWNERS の @your-org/... を実際のチーム（GitLab ならグループ）に置き換える（README の 3）"))
+    if has("AGENTS.md", "[プロジェクト名]"):
+        todos.append(Todo(-2, "案件リーダー", "AGENTS.md をこの案件のものにする",
+                          "プロジェクト名とコマンドが見本のままです。エージェントが毎回読むファイルです",
+                          "AGENTS.md の [ ] の部分を書き換える（60行以内）。pom.xml・src/ のパッケージ名も合わせる（README の 3）"))
+    if has("docs/requirements/reservation.md", "見本"):
+        todos.append(Todo(-1, "社員", "見本の要件・不変条件・用語を消す",
+                          "ツアー予約の見本（docs/requirements/reservation.md など）が残っていると、エージェントが案件の要件と取り違えます",
+                          "docs/requirements/reservation.md と docs/domain/ の見本の行を消す。要件は ID 設計から転記して作る（README の 3）"))
+    return todos
+
+
+# ---- PR・MR の質問（人の答えはコメントで受ける。本文は Copilot が書き換えるので人は編集しない） ----
+
+QSEC_RE = re.compile(r"##[^\n]*判断してほしい[^\n]*\n(.*?)(?=\n## |\Z)", re.S)
+ANSWER_RE = re.compile(r"^[ \t>]*(回答|保留)[:：][ \t]*([0-9０-９][0-9０-９,，、 \t]*)", re.M)
+
+
+def open_questions(body, comments):
+    """[(番号, 質問)]。番号は「判断してほしいこと」の節の質問の行の上からの順。
+    人のコメントの「回答: 1, 3」「保留: 2」の行と、本文の（回答済み）（保留）で答えたものとする"""
+    m = QSEC_RE.search(body or "")
+    lines = [l.strip() for l in (m.group(1).splitlines() if m else [])
+             if l.strip().startswith(("- ", "* ")) or re.match(r"\s*[0-9]+[.)．]", l)]
+    done = set()
+    for c in comments:
+        for _, nums in ANSWER_RE.findall(c):
+            nums = nums.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+            done |= {int(x) for x in re.findall(r"\d+", nums)}
+    return [(k, re.sub(r"^(?:[-*]|[0-9]+[.)．])\s*", "", l)) for k, l in enumerate(lines, 1)
+            if k not in done and not re.search(r"（(回答済み|保留)）", l)]
+
+
+def question_todo(kind, n, qs, how_more):
+    shown = "／".join(f"{k}. {q}" for k, q in qs[:3]) + ("…" if len(qs) > 3 else "")
+    return Todo(10, "社員", f"{kind} の質問に答える（{len(qs)} 件）",
+                "設計書の穴や、業務で決めることが質問として出ています: " + shown,
+                f"答えを決めたら、{kind} のコメントに「回答: 1」（いくつかなら「回答: 1, 3」、今は決められないものは「保留: 2」）の行を書く。"
+                "本文は編集しない（Copilot が本文を書き換えなくなる）\n" + how_more)
+
+
+# ---- 不具合（結合・総合テストなど、このリポジトリの外で見つかったものの戻り口） ----
+
+BUG_CAUSES = ("設計", "転記", "実装", "ハーネス")
+
+
+def is_bug(issue):
+    labels = [l if isinstance(l, str) else l.get("name", "") for l in issue.get("labels") or []]
+    return "不具合" in labels or (issue.get("title") or "").startswith("【不具合】")
+
+
+def bug_todos(issue, num, body, assigned, pr):
+    """原因区分ごとに、誰が何をするか"""
+    m = re.search(r"^[ \t]*原因区分[:：][ \t]*(\S*)", body or "", re.M)
+    cause = next((c for c in BUG_CAUSES if m and m.group(1).startswith(c)), None)
+    title = issue.get("title") or ""
+    if cause is None:
+        return [Todo(7, "社員", f"不具合 #{num} の原因を切り分ける", title,
+                     f"案内役に「不具合 #{num} を切り分けて」と頼むと、根拠の行 ID から設計書・転記先・テストを読み、"
+                     "どこで食い違ったかの候補を出す。決めたら issue の「原因区分:」を 設計・転記・実装・ハーネス のどれかにする")]
+    if cause == "設計":
+        return [Todo(8, "社員", f"不具合 #{num} の設計書を直す", title,
+                     "設計書を直して PR でレビューし、転記する。転記で変わった要件を実装する issue を作り、この不具合の番号を書く")]
+    if cause == "転記":
+        return [Todo(8, "標準化チーム", f"不具合 #{num} の転記ツールを直す", title,
+                     "設計書の行が転記先にどう入るべきだったかを issue に書いて tazuna に修正を依頼する。直るまでは、PR に「設計書から: 行ID（理由）」で書いて進める")]
+    if cause == "ハーネス":
+        return [Todo(8, "案件リーダー", f"不具合 #{num} をハーネスの不具合として渡す", title,
+                     "harness/rule-log.md に1行書き、再現の手順をまとめて標準化チームに渡す（案件の中では直さない）")]
+    if assigned:
+        return []  # 実装の誤りで、もう誰かが作業している
+    return [Todo(9, "社員", f"不具合 #{num} の修正を割り当てる", title,
+                 f"issue に直す要件（REQ-xxxxx）と、確かめるテスト仕様の行 ID を書いてから、{pr}")]
+
+
 # ---- ローカル ----
 
 def local_state():
@@ -80,7 +181,7 @@ def local_state():
         return todos, facts, None
     if not cat.data.get("機能一覧"):
         # 機能一覧が空でも、システムに1つの書類（方式設計書など）は書類一覧に並ぶので、そちらは先に進められる
-        todos.append(Todo(80, "社員", "機能一覧を、分かっている範囲で書く",
+        todos.append(Todo(51, "社員", "機能一覧を、分かっている範囲で書く",
                           "機能ごとの書類（処理・画面・ジョブ・IF・帳票）は機能一覧から作ります。まだ1行もありません",
                           "docs/design/ID設計.xlsx の「機能一覧」シートに、外部設計で決まっている機能と画面・ジョブ・IF・帳票を書き、"
                           "python3 scripts/design/id_design.py list で書類一覧を作り直す。設計が進んで画面などが増えたら、足して list をやり直す"
@@ -92,7 +193,7 @@ def local_state():
     want = {(doc, name) for doc, name, _ in id_design.derive(cat.data, DESIGN)}
     have = {(r["書類ID"], r["名前"]) for r in cat.instances.values() if r["作成"] != "廃止"}
     if want - have or have - want:
-        todos.append(Todo(70, "社員", "書類一覧を作り直す",
+        todos.append(Todo(52, "社員", "書類一覧を作り直す",
                           f"機能一覧・もとになる設計書と書類一覧が合っていません（足りない {len(want - have)}・余分 {len(have - want)}）",
                           "python3 scripts/design/id_design.py list を実行し、増えた書類の「作成」（書く・書かない）を決める"))
 
@@ -100,7 +201,7 @@ def local_state():
     states = report.doc_states(ROOT)
     nofile = [i for i, r in cat.instances.items() if r["作成"] == "書く" and i not in files]
     if nofile:
-        todos.append(Todo(60, "社員", f"設計書のひな形を作る（{len(nofile)} 件）",
+        todos.append(Todo(53, "社員", f"設計書のひな形を作る（{len(nofile)} 件）",
                           "書くと決めた書類のファイルがまだありません: " + "、".join(nofile[:6]) + ("…" if len(nofile) > 6 else ""),
                           "python3 scripts/design/id_design.py scaffold"))
     lack = sorted(i for i, (_, st) in states.items() if st in ("未着手", "必須不足") and i in files)
@@ -120,7 +221,7 @@ def local_state():
             rows.append((0 if early else 1, i, f"{i} {cat.instances[i]['名前']}: " + "、".join(names)))
         rows.sort()
         first = [r for r in rows if r[0] == 0]
-        todos.append(Todo(50, "社員", f"必須の見出しが空の設計書を書く（{len(lack)} 件）",
+        todos.append(Todo(55, "社員", f"必須の見出しが空の設計書を書く（{len(lack)} 件）",
                           "必須の見出しが埋まるまで、その書類は「完了」になりません。書かないと決めた見出しは「該当なし（理由）」と書く。"
                           + (f"★ の見出しは、機能の書類が先に決めているので、共通の方針・機能に任せる旨・該当なし（理由）のどれかを書く（{len(first)} 件の書類）"
                              if first else ""),
@@ -130,19 +231,22 @@ def local_state():
     import gaps  # noqa: E402
     for t in cat.data.get("書類の種類", []):
         m = id_design.SOURCE_RE.match(id_design.source_of(t))
-        if m and (t.get("状態") or "").strip() not in ("廃止", "使わない") and not id_design.source_names(DESIGN, m.group(1), m.group(2)):
+        # もとになる書類のファイルがまだなければ案内しない（先に「ひな形を作る」が出る。ないファイルに書けとは言わない）
+        src_files = [i for i, r in cat.instances.items() if r["書類ID"] == (m.group(1) if m else None) and i in files]
+        if m and src_files and (t.get("状態") or "").strip() not in ("廃止", "使わない") \
+                and not id_design.source_names(DESIGN, m.group(1), m.group(2)):
             src_doc = cat.docs.get(m.group(1), {}).get("書類名", m.group(1))
             src_item = cat.items.get(m.group(2), {}).get("設計項目", m.group(2))
-            todos.append(Todo(55, "社員", f"{src_doc}の「{src_item}」を書く（{t['書類名']}はここから作る）",
+            todos.append(Todo(54, "社員", f"{src_doc}の「{src_item}」を書く（{t['書類名']}はここから作る）",
                               f"{t['書類名']}は、{m.group(1)} の {m.group(2)} {src_item} の行ごとに1枚できます。まだ1行もありません",
-                              f"{m.group(1)} の設計書の「## {m.group(2)} {src_item}」に、1行1つ、行の先頭に名前を書く。"
+                              f"{src_files[0]} {files[src_files[0]]} の「## {m.group(2)} {src_item}」に、1行1つ、行の先頭に名前を書く。"
                               "設計の PR をマージしたら python3 scripts/design/id_design.py list で書類一覧を作り直す"))
     nodll, unlisted = gaps.table_vs_ddl(ROOT, DESIGN)
     unknown = gaps.crud(ROOT, DESIGN, cat)[1]
     if nodll or unlisted or unknown:
         what = ([f"DDL がない {n}（{lid}）" for lid, n in nodll] + [f"テーブル一覧にない DDL {n}" for n in unlisted]
                 + [f"CRUD の {n}（{lid}）がテーブル一覧にも DDL の列にもない" for lid, n in unknown])
-        todos.append(Todo(45, "社員", f"テーブル一覧・DDL・CRUD をそろえる（{len(what)} 件）",
+        todos.append(Todo(56, "社員", f"テーブル一覧・DDL・CRUD をそろえる（{len(what)} 件）",
                           "、".join(what[:6]) + ("…" if len(what) > 6 else ""),
                           "テーブル一覧（S-20 の D-05020）が正。一覧にあるテーブルは db/schema/<テーブル名>.sql を書く（列の説明も）。"
                           "一覧にない DDL は一覧に足すか消す。CRUD の名前がテーブルなら一覧に足し、列なら DDL に足す"))
@@ -164,6 +268,9 @@ def local_state():
 
     reqs, _ = report.requirements(ROOT)
     refs = report.test_refs(ROOT)
+    _, specs = report.requirements(ROOT)
+    facts["handoff"] = [(f, lid, text) for f, rows in specs.items() for lid, text in rows if lid not in refs]
+    facts["specs"] = sum(len(rows) for rows in specs.values())
     facts.update(reqs=reqs, untested=sorted(r for r in reqs if r not in refs),
                  docs=states, done=sum(1 for _, s in states.values() if s == "完了"))
     return todos, facts, cat
@@ -203,14 +310,13 @@ def github_state(facts):
                               "ハーネス（Lint・hooks）の誤りに見えるなら標準化チームに伝える"))
             continue
         body = pr.get("body") or ""
-        qs = re.search(r"##[^\n]*判断してほしい[^\n]*\n(.*?)(?=\n## |\Z)", body, re.S)
-        open_q = [l for l in (qs.group(1).splitlines() if qs else [])
-                  if l.strip().startswith(("- ", "* ", "1")) and not re.search(r"（(回答済み|保留)）", l)]
+        comments = [c.get("body") or "" for c in (gh(f"repos/{{owner}}/{{repo}}/issues/{n}/comments?per_page=100") or [])
+                    if (c.get("user") or {}).get("type") != "Bot" and (c.get("user") or {}).get("login") != "Copilot"]
+        open_q = open_questions(body, comments)
         if open_q:
-            todos.append(Todo(10, "社員", f"PR #{n} の質問に答える（{len(open_q)} 件）",
-                              "設計書の穴や、業務で決めることが質問として出ています",
-                              "設計書の穴なら設計書を直して転記し、PR に「@copilot main を取り込んで…」とコメントする。"
-                              "業務で決めることなら決めて設計書に書く。決められないものは保留として PR にコメントする"))
+            todos.append(question_todo(f"PR #{n}", n, open_q,
+                                       "設計書の穴なら設計書を直して転記し、PR に「@copilot main を取り込んで…」とコメントする。"
+                                       "業務で決めることなら決めて設計書に書く"))
         elif ci and all(r.get("conclusion") == "success" for r in ci[:1]):
             todos.append(Todo(20, "社員", f"PR #{n} をレビューしてマージする",
                               "CI が通っています" + ("（Copilot の PR）" if copilot else ""),
@@ -219,6 +325,10 @@ def github_state(facts):
     # 要件と issue
     linked = {r for i in issues for r in REQ_RE.findall((i.get("title") or "") + (i.get("body") or ""))}
     for i in issues:
+        if is_bug(i):
+            todos += bug_todos(i, i["number"], i.get("body"), bool(i.get("assignees")),
+                               f"issue #{i['number']} の Assignees で Copilot を選ぶ")
+            continue
         found = REQ_RE.findall((i.get("title") or "") + (i.get("body") or ""))
         if found and not any(a["login"] == "Copilot" for a in i.get("assignees") or []) \
                 and not any(str(i["number"]) in (p.get("body") or "") for p in prs):
@@ -263,14 +373,13 @@ def gitlab_state(facts):
                               "ハーネス（Lint・hooks）の誤りに見えるなら標準化チームに伝える"))
             continue
         body = one.get("description") or ""
-        qs = re.search(r"##[^\n]*判断してほしい[^\n]*\n(.*?)(?=\n## |\Z)", body, re.S)
-        open_q = [l for l in (qs.group(1).splitlines() if qs else [])
-                  if l.strip().startswith(("- ", "* ", "1")) and not re.search(r"（(回答済み|保留)）", l)]
+        notes = [x.get("body") or "" for x in (gitlab.api(f"projects/:id/merge_requests/{n}/notes?per_page=100", root=ROOT) or [])
+                 if not x.get("system")]
+        open_q = open_questions(body, notes)
         if open_q:
-            todos.append(Todo(10, "社員", f"MR !{n} の質問に答える（{len(open_q)} 件）",
-                              "設計書の穴や、業務で決めることが質問として出ています",
-                              "設計書の穴なら設計書を直して転記し、MR の作者に取り込んでもらう。"
-                              "業務で決めることなら決めて設計書に書く。決められないものは保留として MR にコメントする"))
+            todos.append(question_todo(f"MR !{n}", n, open_q,
+                                       "設計書の穴なら設計書を直して転記し、MR の作者に取り込んでもらう。"
+                                       "業務で決めることなら決めて設計書に書く"))
         elif pipe == "success":
             todos.append(Todo(20, "社員", f"MR !{n} をレビューしてマージする",
                               "CI が通っています",
@@ -282,6 +391,10 @@ def gitlab_state(facts):
                               f"MR !{n} の「Pipelines」で「Run pipeline」を押す。動かなければ案件リーダーに伝える"))
     linked = {r for i in issues for r in REQ_RE.findall((i.get("title") or "") + (i.get("description") or ""))}
     for i in issues:
+        if is_bug(i):
+            todos += bug_todos(i, i["iid"], i.get("description"), bool(i.get("assignees")),
+                               f"issue #{i['iid']} の Assignee に作業する人を入れる")
+            continue
         found = REQ_RE.findall((i.get("title") or "") + (i.get("description") or ""))
         ref = re.compile(rf"#{i['iid']}\b")
         if found and not i.get("assignees") and not any(ref.search(m.get("description") or "") for m in mrs):
@@ -344,6 +457,7 @@ def main():
         sys.stdout.write(issue_draft(a.issue))
         return
     todos, facts, cat = local_state()
+    todos = setup_state() + todos
     gfacts = {}
     if not a.local:
         t2, gfacts = (gitlab_state if platform() == "gitlab" else github_state)(facts)
@@ -357,7 +471,10 @@ def main():
     todos.sort(key=lambda t: t.rank)
 
     docs = facts.get("docs", {})
-    if not docs:
+    handoff = False
+    if any(t.rank < 0 for t in todos):
+        stage = "立ち上げ"
+    elif not docs:
         stage = "準備"
     elif any(t.rank <= 30 for t in todos):
         stage = "実装・レビュー"
@@ -365,6 +482,8 @@ def main():
         stage = "転記・issue 化"
     elif any(t.rank <= 80 for t in todos):
         stage = "設計"
+    elif facts.get("reqs"):
+        stage, handoff = "単体テストまで完了（結合テストへ引き渡す）", True
     else:
         stage = "止まっているものはありません"
     out = [f"## 今の段階: {stage}", ""]
@@ -379,7 +498,16 @@ def main():
     if "gitlab" in gfacts:
         out.append(f"- GitLab: {gfacts['gitlab']}")
     out += ["", "## 次にやること（上から順に）", ""]
-    if not todos:
+    if handoff:
+        rows = facts.get("handoff", [])
+        out += ["このリポジトリ（tazuna）の範囲は単体テストまでで、すべての要件にテストがあります。"
+                "結合・総合テストは、作る人と試験する人を分けるため、ED・SP から試験チームが別に起こします。次を渡してください。", "",
+                f"- 要件 {len(facts['reqs'])} 件。テスト仕様 {facts.get('specs', 0)} 行のうち、単体テストで確かめた {facts.get('specs', 0) - len(rows)} 行",
+                "- 単体テストで確かめていないテスト仕様の行" + ("（PR に「未対応」と書いた行。理由はその PR の本文）:" if rows else ": なし")]
+        out += [f"  - {lid} {text}（{f}）" for f, lid, text in rows]
+        out += ["- 結合・総合テストで見つかった不具合は、このリポジトリの issue に「不具合」のテンプレートで書いてもらう。"
+                "ここへ戻る入口で、原因（設計・転記・実装・ハーネス）を切り分けて直す", ""]
+    elif not todos:
         out.append("止まっているものはありません。")
     for k, t in enumerate(todos, 1):
         out.append(f"{k}. **{t.what}**（{t.who}）")
