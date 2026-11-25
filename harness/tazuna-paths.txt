@@ -16,6 +16,7 @@ scripts/lint/run-all.sh
 scripts/lint/common/*
 scripts/tazuna-update.sh
 harness/GUIDE.md
+harness/design-and-transcription.md
 docs/design/ID設計.xlsx
 docs/design/ID設計.md
 scripts/lint/tests/*

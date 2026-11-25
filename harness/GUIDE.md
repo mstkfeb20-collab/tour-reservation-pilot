@@ -30,7 +30,8 @@ hooks は呼び出し役にもなる（編集のたびに `run-all.sh --fast` �
 | --- | --- | --- |
 | 常に守る原則・基本コマンド・参照先 | `AGENTS.md`（60行以内） | 案件リーダー |
 | 調査・設計・レビューの進め方 | `.github/skills/` | base: 標準化チーム／proj: 案件リーダー |
-| 完了条件 | `docs/requirements/` | 社員 |
+| 業務の決定（設計） | `docs/design/` の設計書（要件・テスト仕様・作業一覧は、ここから転記ツールが作る。[設計書と転記先](design-and-transcription.md)） | 社員 |
+| 完了条件 | `docs/requirements/`（設計書から転記。手で直さない） | 社員 |
 | 業務ルール・用語・機能一覧 | `docs/domain/` | 社員 |
 | レイヤー・依存方向・作法 | `docs/architecture.md`、`docs/conventions.md` | 案件リーダー |
 | 機械的に判定できるルール | `scripts/lint/common/`（型）、`scripts/lint/domain/`（案件） | 標準化チーム／社員 |
@@ -45,7 +46,7 @@ hooks は呼び出し役にもなる（編集のたびに `run-all.sh --fast` �
 
 ## 開発の流れ
 
-1. 社員がチケットに要件IDと完了条件を書く。
+1. 社員が設計書を書いてレビューし、転記ツールで要件・テスト仕様・作業一覧を作る（何を書き、どう渡るかは [設計書と転記先](design-and-transcription.md)）。issue には要件IDを書く。
 2. エージェントが `base-task-workflow` に沿って実装する。作業中は hooks が危険な操作を止め、編集のたびに Lint が走る。
 3. エージェントが Lint・テストを通し、PRに実行結果と証拠を書いて提出する。
 4. CI が Lint・hooks の自己テスト・`mvn verify` を再実行する。

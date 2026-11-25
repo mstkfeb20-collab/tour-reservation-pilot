@@ -15,6 +15,7 @@ scripts/tazuna-update.sh
 harness/tazuna-paths.txt
 harness/tazuna-version
 harness/GUIDE.md
+harness/design-and-transcription.md
 docs/design/ID設計.xlsx
 docs/design/ID設計.md
 scripts/lint/tests/*
