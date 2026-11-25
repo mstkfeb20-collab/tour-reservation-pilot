@@ -4,6 +4,7 @@
     python3 scripts/design/id_design.py scaffold   # 書類一覧で「書く」にした書類のうち、まだないものの設計書ファイルを作る（見出しだけのひな形）
     python3 scripts/design/id_design.py progress   # 進捗・網羅状況のシートを作り直す（先に git fetch。統合先のブランチと比べて完了かを決める）
     python3 scripts/design/id_design.py export     # 書き出し（ID設計.md）を作る。--check なら食い違いを確かめるだけ
+    python3 scripts/design/id_design.py paint      # 誰が埋める列かを色で示し、凡例のシートを作る（list・progress でも行う）
     オプション: --design <設計書のフォルダ>（既定 docs/design）
               --base <比べるブランチ>（progress 用。既定は環境変数 TAZUNA_BASE_BRANCH、なければ GitHub の既定のブランチ
               （origin/HEAD）、それもなければ origin/main。develop に統合する案件なら --base origin/develop）
@@ -94,6 +95,77 @@ def cmd_list(data):
     return data
 
 
+# 列を誰が埋めるか。"*" はそのシートの残りの列
+WHO = {
+    "人": ("FFF2CC", "BF9000", "人が埋める・決める（案件で書く）"),
+    "案件": ("E2EFDA", "548235", "型の値だが、案件で変えてよい（変えた理由を PR に書く。base-design-check で確かめる）"),
+    "ツール": ("EDEDED", "808080", "ツールが作る。手で直さない（直しても作り直すと消える）"),
+    "型": ("DDEBF7", "2F5597", "型（標準化チームが持つ）。案件では変えない。変えたいときは標準化チームに伝える"),
+}
+OWNER = {
+    "機能一覧": {"*": "人"},
+    "書類一覧": {"作成": "人", "理由": "人", "*": "ツール"},
+    "進捗": {"*": "ツール"}, "網羅状況": {"*": "ツール"}, "集計": {"*": "ツール"},
+    "書類の種類": {"*": "型"}, "記載項目": {"記載": "案件", "*": "型"},
+    "振り分け表": {"*": "型"}, "振り分けルール": {"*": "型"}, "属性の判定基準": {"*": "型"},
+}
+LEGEND = "凡例"
+LEGEND_ROWS = [
+    ["色", "意味", "シート・列"],
+    ["人", WHO["人"][2], "機能一覧の全列、書類一覧の「作成」「理由」"],
+    ["案件", WHO["案件"][2], "記載項目の「記載」（必須・該当時）"],
+    ["ツール", WHO["ツール"][2], "書類一覧の「作成」「理由」以外、進捗、網羅状況、集計"],
+    ["型", WHO["型"][2], "書類の種類、記載項目（「記載」以外）、振り分け表、振り分けルール、属性の判定基準"],
+    [],
+    ["進め方", "", ""],
+    ["1", "機能一覧に、1機能1行で、使う画面・ジョブ・IF・帳票・テーブルを書く（1つのセルに複数書くときは「、」で区切る）", "人"],
+    ["2", "python3 scripts/design/id_design.py list で書類一覧を作る（書類の種類の「作る単位」ごとに書類実体ができ、「機能」の列で処理設計書に結びつく）", "ツール"],
+    ["3", "書類一覧の「作成」を決める。書かない書類は「書かない」にし、「理由」を書く", "人"],
+    ["4", "python3 scripts/design/id_design.py scaffold で設計書のひな形を作り、設計書を書く", "ツール → 人"],
+    ["5", "python3 scripts/design/id_design.py progress で進捗・網羅状況を作り直す", "ツール"],
+]
+
+
+def paint(wb):
+    """見出しの色・データの入力欄の色・シートの見出しの色で、誰が埋める列かを示す。凡例のシートを先頭に置く"""
+    from openpyxl.styles import Font, PatternFill
+    fill = {k: PatternFill("solid", fgColor=v[0]) for k, v in WHO.items()}
+    for sheet, rule in OWNER.items():
+        if sheet not in wb.sheetnames:
+            continue
+        ws = wb[sheet]
+        last = max(ws.max_row, 200 if rule.get("*") == "人" or "人" in rule.values() else ws.max_row)
+        kinds = set()
+        for c in range(1, ws.max_column + 1):
+            name = ws.cell(1, c).value
+            if name in (None, ""):
+                continue
+            who = rule.get(name, rule["*"])
+            kinds.add(who)
+            ws.cell(1, c).fill = fill[who]
+            ws.cell(1, c).font = Font(bold=True)
+            if who == "人":  # 入力欄は空の行まで塗る
+                for r in range(2, last + 1):
+                    ws.cell(r, c).fill = fill[who]
+        ws.sheet_properties.tabColor = WHO["人" if "人" in kinds else ("案件" if "案件" in kinds else rule["*"])][1]
+        ws.freeze_panes = "A2"
+    if LEGEND in wb.sheetnames:
+        del wb[LEGEND]
+    ws = wb.create_sheet(LEGEND, 0)
+    for row in LEGEND_ROWS:
+        ws.append(row)
+    for r in (1, 7):
+        for c in range(1, 4):
+            ws.cell(r, c).font = Font(bold=True)
+    for r, key in enumerate(["人", "案件", "ツール", "型"], 2):
+        ws.cell(r, 1).fill = fill[key]
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 90
+    ws.column_dimensions["C"].width = 60
+    ws.sheet_properties.tabColor = "000000"
+    wb.active = wb.sheetnames.index("機能一覧") if "機能一覧" in wb.sheetnames else 0
+
+
 def write_sheet(path, sheet, cols, rows):
     from openpyxl import load_workbook
     wb = load_workbook(path)
@@ -104,6 +176,7 @@ def write_sheet(path, sheet, cols, rows):
         ws.delete_rows(2, ws.max_row - 1)
     for r in rows:
         ws.append([r.get(c, "") for c in cols])
+    paint(wb)
     wb.save(path)
 
 
@@ -231,7 +304,7 @@ def test_refs():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("command", choices=["list", "scaffold", "progress", "export"])
+    ap.add_argument("command", choices=["list", "scaffold", "progress", "export", "paint"])
     ap.add_argument("--design", default=os.path.join(ROOT, "docs", "design"))
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--base", default=None)
@@ -250,6 +323,13 @@ def main():
             return 1
         return 0
 
+    if a.command == "paint":
+        from openpyxl import load_workbook
+        wb = load_workbook(xlsx)
+        paint(wb)
+        wb.save(xlsx)
+        print("色を付けました（凡例のシート）")
+        return 0
     if a.command == "list":
         data = cmd_list(data)
         write_sheet(xlsx, "書類一覧", catalog.TABLES[1][1], data["書類一覧"])

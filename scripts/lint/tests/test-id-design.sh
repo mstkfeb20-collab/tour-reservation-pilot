@@ -72,6 +72,18 @@ f="$w/docs/design/S-23-001_J110.md"
 run export --check && ok || ng "list・scaffold の後は書き出しが Excel と一致"
 edit func "予約照会|予約照会|||||"
 run export --check && ng "Excel だけ直すと書き出しと食い違う" || ok
+# 誰が埋める列かを色で示す（list で作り直しても消えない）
+colors=$(python3 - "$w/docs/design/ID設計.xlsx" <<'PY'
+import sys, openpyxl
+wb = openpyxl.load_workbook(sys.argv[1])
+ws = wb["書類一覧"]
+head = {c.value: c.fill.fgColor.rgb[-6:] for c in ws[1]}
+print(wb.sheetnames[0], head["書類実体ID"], head["作成"], ws.cell(ws.max_row, 6).fill.fgColor.rgb[-6:],
+      wb["機能一覧"].cell(1, 1).fill.fgColor.rgb[-6:], wb["振り分け表"].cell(1, 1).fill.fgColor.rgb[-6:])
+PY
+)
+[ "$colors" = "凡例 EDEDED FFF2CC FFF2CC FFF2CC DDEBF7" ] && ok || ng "列の色（ツールは灰、人は黄、型は青）と凡例のシート: $colors"
+
 rm -rf "$w"
 
 echo "id-design: ${pass} 件成功 / ${fail} 件失敗"
