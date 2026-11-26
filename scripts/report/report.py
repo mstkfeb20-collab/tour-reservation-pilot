@@ -26,6 +26,7 @@ import xml.etree.ElementTree as ET
 ROOT = os.environ.get("TAZUNA_ROOT") or subprocess.run(
     ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip() or os.getcwd()
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "design"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import catalog  # noqa: E402
 
 LID = r"S-\d{2}-\d{3}/D-\d{5}/\d+"
@@ -314,6 +315,18 @@ def daily_report(branch, since):
         for _, st in now_docs.values():
             counts[st] = counts.get(st, 0) + 1
         out += ["", "### 書類の状態（全体）", "", "- " + "・".join(f"{k} {v}" for k, v in sorted(counts.items())) if counts else "- 書類一覧なし"]
+        # 誰が何を書いているか（開いている PR。設計書は書き始めたらドラフトの PR を出す決まり）
+        import changes
+        opened = changes.open_changes(ROOT)
+        out += ["", "### 書いている・レビュー中の書類（開いている PR）", ""]
+        if opened is None:
+            out.append("- 開いている PR を読めませんでした")
+        else:
+            rows = []
+            for inst, prs in sorted(changes.by_document(opened).items()):
+                st, shown = changes.state_of(prs)
+                rows.append(f"- {st}: {inst} {now_docs.get(inst, ('（新しい書類）',))[0]}（{shown}）")
+            out += rows or ["- なし"]
         out += ["", "### コミット", ""] + [f"- {c}" for c in commits[:30]]
     finally:
         if tmp:

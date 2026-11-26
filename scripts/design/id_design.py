@@ -2,14 +2,15 @@
 
     python3 scripts/design/id_design.py list       # 機能一覧と、もとになる設計書の行から書類一覧を作り直す（番号は保ち、新しい書類だけ末尾の番号を振る）
     python3 scripts/design/id_design.py scaffold   # 書類一覧で「書く」にした書類のうち、まだないものの設計書ファイルを作る（見出しだけのひな形）
-    python3 scripts/design/id_design.py progress   # 進捗・網羅状況のシートを作り直す（先に git fetch。統合先のブランチと比べて完了かを決める）
+    python3 scripts/design/id_design.py progress   # 書類ごとの状態を出す（先に git fetch）。統合先のブランチの内容と開いている PR で決め、
+                                                   # 一覧は .tazuna-local/進捗.xlsx（コミットしない）
     python3 scripts/design/id_design.py export     # 書き出し（ID設計.md）を作る。--check なら食い違いを確かめるだけ
     python3 scripts/design/id_design.py paint      # 誰が埋める列かを見出しの色で示し、凡例のシートを作る（list・progress でも行う）
     オプション: --design <設計書のフォルダ>（既定 docs/design）
               --base <比べるブランチ>（progress 用。既定は環境変数 TAZUNA_BASE_BRANCH、なければ GitHub の既定のブランチ
               （origin/HEAD）、それもなければ origin/main。develop に統合する案件なら --base origin/develop）
 
-list・scaffold・progress は最後に export も行う。書類一覧の番号は付けたら変えず、機能一覧から外れた書類も消さずに「廃止」にする。
+list・scaffold は最後に export も行う。書類一覧の番号は付けたら変えず、機能一覧から外れた書類も消さずに「廃止」にする。
 どの書類が1枚ずつできるかは、書類の種類の「もと」で決まる（機能一覧の列か、設計書の見出しの行。テーブル設計書は S-20 のテーブル一覧の行ごと）。
 書類の種類の「状態」が「廃止」（型でやめた）か「使わない」（この案件で作らないと決めた）の種類は、書類一覧に作らない。
 """
@@ -137,7 +138,7 @@ WHO = {
 OWNER = {
     "機能一覧": {"*": "人"},
     "書類一覧": {"作成": "人", "理由": "人", "*": "ツール"},
-    "進捗": {"*": "ツール"}, "網羅状況": {"*": "ツール"}, "集計": {"*": "ツール"},
+    "集計": {"*": "ツール"},
     "書類の種類": {"状態": "案件", "もと": "案件", "*": "型"}, "記載項目": {"記載": "案件", "*": "型"},
     "振り分け表": {"*": "型"}, "振り分けルール": {"*": "型"}, "属性の判定基準": {"*": "型"},
 }
@@ -145,7 +146,7 @@ LEGEND = "凡例"
 COLS_TEXT = {  # 列の色が付く場所（凡例に書く）
     "人": "機能一覧の全列、書類一覧の「作成」「理由」",
     "案件": "書類の種類の「状態」（使う・使わない）と「もと」、記載項目の「記載」（必須・該当時）",
-    "ツール": "書類一覧の「作成」「理由」以外、進捗・網羅状況・集計の全列",
+    "ツール": "書類一覧の「作成」「理由」以外、集計の全列",
     "型": "振り分け表・振り分けルール・属性の判定基準の全列、書類の種類の「状態」「もと」以外、記載項目の「記載」以外",
 }
 PROCESS_SHEET = "進め方"
@@ -159,17 +160,17 @@ PROCESS = [  # (段階, 順, やること, 誰が, 使うもの, 次へ進む目
      "社員", "id_design.py list、書類一覧", "ID設計.xlsx と ID設計.md を PR でマージ"),
     ("", "5", "設計書のひな形を作る", "社員", "id_design.py scaffold", "—"),
     ("設計", "6", "共通の書類を書く（方式・画面共通・メッセージ・セキュリティ・コード定義など）。★ が出たら、共通の方針・機能に任せる旨・該当なし（理由）のどれかを先に書く",
-     "社員・協力会社", "docs/design/、案内役", "必須の見出しが埋まる"),
+     "社員・協力会社", "docs/design/、案内役", "必須の見出しが埋まる（書き始めたらドラフトの PR を出す）"),
     ("", "7", "データモデル設計書（S-20）でテーブル一覧（D-05020）を決める。マージしたら list と scaffold をやり直すと、テーブル設計書が1枚ずつできる",
      "社員・DBA", "S-20、id_design.py list・scaffold", "テーブル一覧を PR でマージ"),
     ("", "8", "テーブル一覧の1行ごとに DDL（db/schema/<テーブル>.sql）を書く。全列に説明、区分値は CHECK と設計書の行ID。テーブル設計書（S-16）には DDL に書けない決定だけを書く",
      "協力会社・DBA", "db/schema/、S-16", "Lint の「DDL がない」「一覧にない」が消える"),
     ("", "9", "機能の書類を書く（処理・画面・ジョブ・IF・帳票・テスト仕様）。CRUD にはテーブル一覧の名前を使う。画面などが増えたら機能一覧に足して 4 をやり直す",
-     "社員・協力会社", "処理設計書ほか", "必須の見出しが埋まる"),
+     "社員・協力会社", "処理設計書ほか", "必須の見出しが埋まる（書き始めたらドラフトの PR を出す）"),
     ("", "10", "設計の PR をレビューしてマージする。食い違い・未定義・抜けはスキル base-design-review で見る。業務の正しさは人が見る",
-     "社員", "base-design-review、review_pack.py", "承認してマージ。id_design.py progress で状態を確かめる"),
+     "社員", "base-design-review、review_pack.py", "承認してマージ。id_design.py progress か日次レポートで状態を確かめる"),
     ("転記", "11", "機能の書類がそろったら、要件・テスト仕様・作業一覧へ転記し、転記の PR で確かめてマージする", "社員",
-     "transcribe.py", "進捗の「要転記」が消える"),
+     "transcribe.py", "進捗の転記が「済」になる"),
     ("実装", "12", "要件ごとに issue を作り（下書きは next.py --issue REQ-xxxxx）、Copilot か担当者に割り当てる", "案件リーダー",
      "next.py", "—"),
     ("", "13", "実装の PR を出す。本文に「対象要件:」、テストに行IDの @Tag、対応しない行は「未対応:」、設計書を根拠にした行は「設計書から:」",
@@ -281,6 +282,11 @@ def paint(wb):
     wb.active = wb.sheetnames.index("機能一覧") if "機能一覧" in wb.sheetnames else 0
 
 
+def catalog_sheetnames(path):
+    from openpyxl import load_workbook
+    return load_workbook(path, read_only=True).sheetnames
+
+
 def write_sheet(path, sheet, cols, rows):
     from openpyxl import load_workbook
     wb = load_workbook(path)
@@ -322,14 +328,11 @@ def git(*args):
     return subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True)
 
 
-def open_pr_files():
-    """開いている PR が触っているファイル（gh があるときだけ）"""
-    r = subprocess.run(["gh", "pr", "list", "--state", "open", "--json", "files", "--limit", "100"],
-                       capture_output=True, text=True, cwd=ROOT)
-    if r.returncode != 0:
-        return None
-    import json
-    return {f["path"] for pr in json.loads(r.stdout or "[]") for f in pr.get("files", [])}
+def open_changes():
+    """開いている PR・MR（scripts/report/changes.py）。読めないときは None"""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "report"))
+    import changes
+    return changes, changes.open_changes(ROOT)
 
 
 def base_branch(explicit=None):
@@ -346,12 +349,29 @@ def base_branch(explicit=None):
     return "main"
 
 
+def local_changed(base, rel):
+    """手元で変えていて、統合先にまだ入っていないか（作業中の変更・統合先にないコミット）"""
+    if git("diff", "--quiet", "HEAD", "--", rel).returncode != 0:
+        return True
+    if git("ls-files", "--error-unmatch", rel).returncode != 0:
+        return os.path.exists(os.path.join(ROOT, rel))  # まだ git に入れていない新しいファイル
+    return bool(git("log", "--oneline", f"{base}..HEAD", "--", rel).stdout.strip())
+
+
 def cmd_progress(folder, cat, base=None):
+    """書類ごとの状態。全員に同じく見えるよう、統合先のブランチの内容と開いている PR から決める。
+      完了・必須不足・未着手 … 統合先のブランチの内容
+      レビュー中・執筆中     … その設計書を触っている、開いている PR（ドラフトなら執筆中）
+      手元で変更中（PR なし） … 手元だけで変えている。他の人からは見えないので、ドラフトの PR を出す"""
     import transcribe
     files = catalog.design_files(folder)
     base = base_branch(base)
-    print("比べるブランチ:", base)
-    prs = open_pr_files()
+    has_base = git("rev-parse", "-q", "--verify", base).returncode == 0
+    print("比べるブランチ:", base if has_base else f"{base}（見つからないので手元の内容で決めます）")
+    changes, opened = open_changes()
+    if opened is None:
+        print("開いている PR は読めませんでした（GitHub は gh auth login、GitLab はトークン）。レビュー中・執筆中は出ません")
+    prs = changes.by_document(opened)
     trans = transcribe.status(folder, ROOT)
     tests = test_refs()
     defined = defined_reqs()
@@ -360,30 +380,34 @@ def cmd_progress(folder, cat, base=None):
         doc = r["書類ID"]
         need = {i for i, rec in cat.records.get(doc, {}).items() if rec["記載"] == "必須"}
         name = files.get(inst)
-        heads, lines, na = ([], [], set())
-        if name:
-            heads, lines, na = catalog.parse_design(open(os.path.join(folder, name), encoding="utf-8").read())
+        rel = os.path.relpath(os.path.join(folder, name), ROOT) if name else None
+        mine = bool(rel) and has_base and local_changed(base, rel)
+        text = None
+        if rel and (mine or not has_base):
+            text = open(os.path.join(folder, name), encoding="utf-8").read()
+        elif rel:
+            got = git("show", f"{base}:{rel}")
+            text = got.stdout if got.returncode == 0 else None
+        heads, lines, na = catalog.parse_design(text) if text else ([], [], set())
         live = [l for l in lines if l[1] and not l[2].startswith("（廃止）")]
         written = {}
         for _, _, _, under in live:
             written[under] = written.get(under, 0) + 1
         done_need = {i for i in need if i in written or i in na}
+        pr_state, pr_shown = changes.state_of(prs.get(inst))
         if r["作成"] in ("書かない", "廃止"):
             state = r["作成"]
+        elif pr_state:
+            state = pr_state
+        elif mine:
+            state = "手元で変更中（PR なし）"
         elif not live:
             state = "未着手"
         else:
-            rel = os.path.relpath(os.path.join(folder, name), ROOT)
-            same = git("diff", "--quiet", base, "--", rel).returncode == 0 and git("ls-files", "--error-unmatch", rel).returncode == 0
-            if same:
-                state = "完了" if done_need == need else "必須不足"
-            elif prs is not None and rel in prs:
-                state = "レビュー中"
-            else:
-                state = "執筆中"
+            state = "完了" if done_need == need else "必須不足"
         req = f"REQ-{doc[2:]}{inst[-3:]}"
         req = req if req in defined else ""
-        prog.append({"書類実体ID": inst, "名前": r["名前"], "機能": r["機能"], "状態": state,
+        prog.append({"書類実体ID": inst, "名前": r["名前"], "機能": r["機能"], "状態": state, "PR": pr_shown,
                      "必須の見出し": f"{len(done_need)}/{len(need)}", "行": str(len(live)),
                      "転記": trans.get(inst, "—"),
                      "要件": req, "テスト": ("あり" if req in tests else "未実装") if req else ""})
@@ -393,6 +417,32 @@ def cmd_progress(folder, cat, base=None):
             st = f"書いた（{written[iid]}行）" if iid in written else ("該当なし" if iid in na else "未記入")
             cover.append({"書類実体ID": inst, "名前": r["名前"], "項番": iid, "設計項目": rec["設計項目"], "記載": rec["記載"], "状況": st})
     return prog, cover
+
+
+PROGRESS_COLS = ["書類実体ID", "名前", "機能", "状態", "PR", "必須の見出し", "行", "転記", "要件", "テスト"]
+COVER_COLS = ["書類実体ID", "名前", "項番", "設計項目", "記載", "状況"]
+LOCAL_DIR = ".tazuna-local"
+
+
+def write_progress(prog, cover):
+    """進捗は手元で見るためのもの。ID設計.xlsx には書かず（人ごとに中身がずれ、Excel は git でマージできない）、
+    コミットされないフォルダ .tazuna-local/ の 進捗.xlsx に出す"""
+    from openpyxl import Workbook
+    out = os.path.join(ROOT, LOCAL_DIR)
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, ".gitignore"), "w", encoding="utf-8") as f:
+        f.write("*\n")
+    wb = Workbook()
+    for k, (title, cols, rows) in enumerate((("進捗", PROGRESS_COLS, prog), ("網羅状況", COVER_COLS, cover))):
+        ws = wb.active if k == 0 else wb.create_sheet()
+        ws.title = title
+        ws.append(cols)
+        for r in rows:
+            ws.append([r.get(c, "") for c in cols])
+        ws.freeze_panes = "A2"
+    path = os.path.join(out, "進捗.xlsx")
+    wb.save(path)
+    return path
 
 
 def defined_reqs():
@@ -454,10 +504,15 @@ def main():
             print("ひな形:", name)
     elif a.command == "progress":
         prog, cover = cmd_progress(a.design, catalog.Catalog(data), a.base)
-        write_sheet(xlsx, "進捗", ["書類実体ID", "名前", "機能", "状態", "必須の見出し", "行", "転記", "要件", "テスト"], prog)
-        write_sheet(xlsx, "網羅状況", ["書類実体ID", "名前", "項番", "設計項目", "記載", "状況"], cover)
         from collections import Counter
         print("進捗:", dict(Counter(p["状態"] for p in prog)))
+        for p in prog:
+            if p["状態"] in ("執筆中", "レビュー中", "手元で変更中（PR なし）"):
+                print(f"  {p['状態']}: {p['書類実体ID']} {p['名前']} {p['PR']}".rstrip())
+        print("一覧:", os.path.relpath(write_progress(prog, cover), ROOT), "（コミットされない）")
+        if any(n in ("進捗", "網羅状況") for n in catalog_sheetnames(xlsx)):
+            print("ID設計.xlsx に古い「進捗」「網羅状況」シートが残っています。今は .tazuna-local/進捗.xlsx に出すので、消してコミットしてください")
+        return 0
     catalog.write_snapshot(catalog.read_excel(xlsx), snap)
     return 0
 

@@ -16,7 +16,7 @@ python3 - "$x" <<'PY'
 import sys
 from openpyxl import load_workbook
 wb = load_workbook(sys.argv[1])
-for s in ("機能一覧", "書類一覧", "進捗", "網羅状況"):
+for s in [n for n in ("機能一覧", "書類一覧", "進捗", "網羅状況") if n in wb.sheetnames]:
     ws = wb[s]
     if ws.max_row > 1:
         ws.delete_rows(2, ws.max_row - 1)
