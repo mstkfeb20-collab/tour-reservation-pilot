@@ -3,7 +3,7 @@
 原本は Excel。人は Excel だけを直す。
   機能一覧   … 人が書く。機能と、それを作る画面・ジョブ・IF・帳票（テーブルは DDL から。書類一覧のテーブル設計書は db/schema/*.sql ごと）
   書類一覧   … id_design.py list が機能一覧から作る。人は「作成」（書く・書かない）と理由だけを付ける
-  進捗・網羅状況 … id_design.py progress が作る
+  （進捗・網羅状況は id_design.py progress が .tazuna-local/進捗.xlsx に出す。ここには書かない）
   書類の種類・記載項目・振り分け表 … 型。案件で育ててよい
 書き出し（ID設計.md）は、PR で差分を読むためと、Lint・転記ツールが Excel なしで読むためのもの。
 id_design.py export で作り、Lint（COMMON-009）が Excel と食い違っていないかを確かめる。

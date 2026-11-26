@@ -58,6 +58,8 @@ jobs:
         run: bash scripts/lint/tests/test-gitlab.sh
       - name: 型の取り込みの自己テスト
         run: bash scripts/lint/tests/test-tazuna-update.sh
+      - name: 進み具合（progress）の自己テスト
+        run: bash scripts/lint/tests/test-progress.sh
 
   build:
     name: ビルドとテスト

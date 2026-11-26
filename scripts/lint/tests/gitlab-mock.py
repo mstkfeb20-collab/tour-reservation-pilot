@@ -23,6 +23,10 @@ ONE = {
     4: {"draft": False, "head_pipeline": {"status": "success"}, "description": "対象要件: REQ-22001\nCloses #7"},
     5: {"draft": False, "head_pipeline": None, "description": ""},
 }
+DIFFS = {  # MR が触っているファイル（!1 は下書きで設計書を書いている、!3 は設計書のレビュー中）
+    1: ["docs/design/S-22-001_予約取消.md"],
+    3: ["docs/design/S-22-002_取消一覧.md", "src/main/java/A.java"],
+}
 ISSUES = [
     {"iid": 7, "title": "REQ-22001 予約取消", "description": "", "assignees": []},
     {"iid": 8, "title": "REQ-22002 取消一覧", "description": "", "assignees": []},
@@ -52,11 +56,15 @@ class H(BaseHTTPRequestHandler):
             return self.send({"message": "401"}, 401)
         u = urlparse(self.path)
         q = parse_qs(u.query)
-        if u.path == f"{P}/merge_requests":  # 一覧にも説明は入る（パイプラインは入らない）
-            return self.send([dict(m, description=ONE[m["iid"]]["description"]) for m in MRS])
+        if u.path == f"{P}/merge_requests":  # 一覧にも説明・下書きは入る（パイプラインは入らない）
+            return self.send([dict(m, description=ONE[m["iid"]]["description"], draft=ONE[m["iid"]]["draft"],
+                                   author={"username": f"user{m['iid']}"}) for m in MRS])
         if u.path.startswith(f"{P}/merge_requests/") and u.path.endswith("/notes"):
             page = q.get("page", ["1"])[0]
             return self.send(NOTES[page], headers={"X-Next-Page": "2"} if page == "1" else {})
+        if u.path.startswith(f"{P}/merge_requests/") and u.path.endswith("/diffs"):
+            n = int(u.path.split("/")[-2])
+            return self.send([{"new_path": f, "old_path": f} for f in DIFFS.get(n, [])])
         if u.path.startswith(f"{P}/merge_requests/"):
             n = int(u.path.rsplit("/", 1)[1])
             return self.send(dict(MRS[n - 1], **ONE[n]))

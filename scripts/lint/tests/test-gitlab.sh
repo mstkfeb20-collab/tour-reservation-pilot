@@ -32,6 +32,13 @@ nocheck "MR が閉じる issue は担当者を求めない" "issue #7 の担当�
 nocheck "担当者のいる issue は求めない" "issue #9 の担当者を決める" "$out"
 nocheck "issue のある要件は issue を作らせない" "REQ-22002 を実装する issue を作る" "$out"
 nocheck "GitHub の承認の手順を出さない" "Approve and run workflows" "$out"
+# 複数人の進み具合: MR が触っている設計書は、下書きなら執筆中、そうでなければレビュー中
+out=$(cd "$ROOT/scripts/report" && TAZUNA_PLATFORM=gitlab python3 -c '
+import changes
+for i, prs in sorted(changes.by_document(changes.open_changes("'"$w/p"'")).items()):
+    print(i, *changes.state_of(prs))' 2>&1)
+check "下書きの MR が触る設計書は執筆中" "S-22-001 執筆中 !1 user1（ドラフト）" "$out"
+check "下書きでない MR が触る設計書はレビュー中" "S-22-002 レビュー中 !3 user3" "$out"
 out=$(cd "$w/p" && TAZUNA_ROOT="$w/p" TAZUNA_PLATFORM=gitlab TAZUNA_GITLAB_TOKEN=x python3 "$ROOT/scripts/report/next.py" 2>&1)
 check "読めないときはトークンを案内する" "GitLab: 見られません" "$out"
 

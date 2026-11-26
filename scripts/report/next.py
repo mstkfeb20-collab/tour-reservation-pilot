@@ -23,6 +23,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "design"))
 import catalog  # noqa: E402
 import gitlab  # noqa: E402
+import changes  # noqa: E402
 import report  # noqa: E402
 
 ROOT = report.ROOT
@@ -51,21 +52,7 @@ def gh(path):
 
 
 def platform():
-    p = os.environ.get("TAZUNA_PLATFORM", "").lower()
-    if not p:
-        try:
-            p = subprocess.run(["git", "-C", ROOT, "config", "--get", "tazuna.platform"],
-                               capture_output=True, text=True, timeout=10).stdout.strip().lower()
-        except (OSError, subprocess.TimeoutExpired):
-            p = ""
-    if p in ("github", "gitlab"):
-        return p
-    if os.environ.get("GITLAB_CI"):
-        return "gitlab"
-    if os.environ.get("GITHUB_ACTIONS"):
-        return "github"
-    url = gitlab._origin(ROOT)
-    return "gitlab" if "gitlab" in url and "github" not in url else "github"
+    return changes.platform(ROOT)
 
 
 # ---- 立ち上げ（テンプレートから作った直後） ----
@@ -171,7 +158,9 @@ def bug_todos(issue, num, body, assigned, pr):
 
 # ---- ローカル ----
 
-def local_state():
+def local_state(busy=None):
+    """busy: 開いている PR で書いている最中の書類 {書類実体ID: 表示}（--local では空）"""
+    busy = busy or {}
     todos, facts = [], {}
     cat = catalog.load(DESIGN) if os.path.isfile(os.path.join(DESIGN, "ID設計.md")) else None
     if cat is None:
@@ -204,7 +193,9 @@ def local_state():
         todos.append(Todo(53, "社員", f"設計書のひな形を作る（{len(nofile)} 件）",
                           "書くと決めた書類のファイルがまだありません: " + "、".join(nofile[:6]) + ("…" if len(nofile) > 6 else ""),
                           "python3 scripts/design/id_design.py scaffold"))
-    lack = sorted(i for i, (_, st) in states.items() if st in ("未着手", "必須不足") and i in files)
+    lack = sorted(i for i, (_, st) in states.items() if st in ("未着手", "必須不足") and i in files and i not in busy)
+    if busy:
+        facts["busy"] = busy
     if lack:
         # ★ 共通の必須の見出しが空なのに、機能の書類が同じ設計項目を決めている（gaps.py。Lint も警告する）
         import gaps  # noqa: E402
@@ -223,6 +214,7 @@ def local_state():
         first = [r for r in rows if r[0] == 0]
         todos.append(Todo(55, "社員", f"必須の見出しが空の設計書を書く（{len(lack)} 件）",
                           "必須の見出しが埋まるまで、その書類は「完了」になりません。書かないと決めた見出しは「該当なし（理由）」と書く。"
+                          "書き始めたら、まずドラフトの PR を出す（誰が書いているかが全員に見え、二重に書かずに済む）。"
                           + (f"★ の見出しは、機能の書類が先に決めているので、共通の方針・機能に任せる旨・該当なし（理由）のどれかを書く（{len(first)} 件の書類）"
                              if first else ""),
                           "\n".join(r[2] for r in rows)))
@@ -456,7 +448,12 @@ def main():
     if a.issue:
         sys.stdout.write(issue_draft(a.issue))
         return
-    todos, facts, cat = local_state()
+    busy = {}
+    if not a.local:
+        for inst, prs in changes.by_document(changes.open_changes(ROOT)).items():
+            st, shown = changes.state_of(prs)
+            busy[inst] = f"{st}（{shown}）"
+    todos, facts, cat = local_state(busy)
     todos = setup_state() + todos
     gfacts = {}
     if not a.local:
@@ -489,6 +486,9 @@ def main():
     out = [f"## 今の段階: {stage}", ""]
     if docs:
         out.append(f"- 書類: {len(docs)} 件（完了 {facts.get('done', 0)}）")
+        if facts.get("busy"):
+            out.append("- 開いている PR で書いている・レビュー中の書類: "
+                       + "、".join(f"{i} {v}" for i, v in sorted(facts["busy"].items())))
         out.append(f"- 要件: {len(facts.get('reqs', {}))} 件（テストなし {len(facts.get('untested', []))}）")
     if "prs" in gfacts:
         pr = "MR" if platform() == "gitlab" else "PR"
