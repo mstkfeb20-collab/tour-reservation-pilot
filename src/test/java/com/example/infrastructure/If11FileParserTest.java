@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.Charset;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -91,5 +92,93 @@ class If11FileParserTest {
         file[202 + 19] = 'B';
 
         assertEquals(0, parser.parse(file).details().size());
+    }
+
+    @Test
+    @DisplayName("レコードの不足や区分の順序違いを形式エラーにする")
+    void rejectsMissingOrMisorderedRecords() {
+        byte[] empty = If11Fixtures.file(List.of());
+        byte[] tooFew = Arrays.copyOf(empty, 2 * 202);
+        assertEquals("ヘッダー・トレーラー・エンドが必要です",
+            assertThrows(IllegalArgumentException.class, () -> parser.parse(tooFew)).getMessage());
+
+        for (int offset : new int[] {0, 202, 404}) {
+            byte[] wrongType = empty.clone();
+            wrongType[offset] = '2';
+            assertEquals("レコード区分の順序または値が正しくありません",
+                assertThrows(IllegalArgumentException.class, () -> parser.parse(wrongType)).getMessage());
+        }
+        byte[] detail = oneDetail();
+        detail[202] = '1';
+        assertEquals("レコード区分の順序または値が正しくありません",
+            assertThrows(IllegalArgumentException.class, () -> parser.parse(detail)).getMessage());
+    }
+
+    @Test
+    @DisplayName("同一勘定日の照会番号の重複と不正な取消区分を拒否する")
+    void rejectsDuplicateInquiryAndInvalidCancellationCode() {
+        If11Fixtures.Detail detail = new If11Fixtures.Detail("000001", 100, "R000000000001", "0", "");
+        byte[] duplicate = If11Fixtures.file(List.of(detail, detail));
+        assertEquals("照会番号が重複しています: 000001",
+            assertThrows(IllegalArgumentException.class, () -> parser.parse(duplicate)).getMessage());
+
+        byte[] invalidCode = oneDetail();
+        invalidCode[202 + 127] = '2';
+        assertEquals("取消区分は0または1で指定してください",
+            assertThrows(IllegalArgumentException.class, () -> parser.parse(invalidCode)).getMessage());
+
+        byte[] reversal = oneDetail();
+        reversal[202 + 127] = '1';
+        assertEquals("1", parser.parse(reversal).details().get(0).cancellationCode());
+    }
+
+    @Test
+    @DisplayName("照会番号と他店券金額と振込依頼人コードは数字で指定する")
+    void rejectsNonNumericDetailFields() {
+        int[] offsets = {1, 29, 39};
+        String[] messages = {"照会番号は数字で指定してください", "他店券金額は数字で指定してください",
+            "振込依頼人コードは数字で指定してください"};
+        for (int i = 0; i < offsets.length; i++) {
+            byte[] file = oneDetail();
+            file[202 + offsets[i]] = 'A';
+            assertEquals(messages[i], assertThrows(IllegalArgumentException.class, () -> parser.parse(file)).getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("データとエンドの未使用領域には空白を指定する")
+    void rejectsNonSpacePadding() {
+        byte[] detailPadding = oneDetail();
+        detailPadding[202 + 148] = 'A';
+        byte[] endPadding = oneDetail();
+        endPadding[606 + 1] = 'A';
+        for (byte[] file : List.of(detailPadding, endPadding)) {
+            assertEquals("未使用領域は空白で指定してください",
+                assertThrows(IllegalArgumentException.class, () -> parser.parse(file)).getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("半角英数字と半角カナを受け付け、その他の文字を拒否する")
+    void validatesCharacterEncoding() {
+        byte[] valid = If11Fixtures.file(List.of(
+            new If11Fixtures.Detail("000001", 100, "aZ09ｱ", "0", "")
+        ));
+        assertEquals("aZ09ｱ", parser.parse(valid).details().get(0).payerName().trim());
+
+        byte[] punctuation = oneDetail();
+        punctuation[202 + 49] = '!';
+        assertEquals("半角英数字と半角カナ以外の文字が含まれています",
+            assertThrows(IllegalArgumentException.class, () -> parser.parse(punctuation)).getMessage());
+
+        byte[] malformed = oneDetail();
+        malformed[202 + 49] = (byte) 0x81;
+        malformed[202 + 50] = ' ';
+        assertEquals("Shift_JISとして読めない文字が含まれています",
+            assertThrows(IllegalArgumentException.class, () -> parser.parse(malformed)).getMessage());
+    }
+
+    private byte[] oneDetail() {
+        return If11Fixtures.file(List.of(new If11Fixtures.Detail("000001", 100, "R000000000001", "0", "")));
     }
 }
