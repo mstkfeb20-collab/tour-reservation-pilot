@@ -52,6 +52,16 @@ class If11FileParserTest {
     }
 
     @Test
+    @DisplayName("トレーラーの件数が一致しても合計金額の不一致は形式エラーにする")
+    void rejectsTrailerAmountMismatch() {
+        byte[] file = oneDetail();
+        file[404 + 18] = '1';
+
+        assertEquals("トレーラーの合計件数または合計金額が明細と一致しません",
+            assertThrows(IllegalArgumentException.class, () -> parser.parse(file)).getMessage());
+    }
+
+    @Test
     @DisplayName("数値以外の金額と200バイトでないレコードは形式エラーにする")
     void rejectsMalformedFieldsAndLengths() {
         byte[] invalidAmount = If11Fixtures.file(List.of(
