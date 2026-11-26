@@ -52,10 +52,10 @@ class If11FileParserTest {
     }
 
     @Test
-    @DisplayName("トレーラーの件数が一致しても合計金額の不一致は形式エラーにする")
-    void rejectsTrailerAmountMismatch() {
+    @DisplayName("トレーラーの合計金額が一致しても件数の不一致は形式エラーにする")
+    void rejectsTrailerCountMismatch() {
         byte[] file = oneDetail();
-        file[404 + 18] = '1';
+        file[404 + 6] = '2';
 
         assertEquals("トレーラーの合計件数または合計金額が明細と一致しません",
             assertThrows(IllegalArgumentException.class, () -> parser.parse(file)).getMessage());
