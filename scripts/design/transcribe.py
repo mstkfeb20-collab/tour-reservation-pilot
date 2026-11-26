@@ -20,6 +20,7 @@
   知識                                 → docs/domain/background.md
   設計・Lint・実行検証・hooks・テスト（業務承認=不要）・人のための設計 → docs/tasks/<処理設計書 or 書類>.md（作業一覧）
   機械で守る項目で業務承認=要の根拠    → 機能別: 要件ファイルの「型・Lint で守る決まり」 / 共通: 候補ファイル
+  機能別の書類で、必須の見出しが空のもの → 要件ファイルの「未決」（決まるまで実装しない。決めて書かないなら「該当なし（理由）」）
 """
 import argparse
 import hashlib
@@ -62,6 +63,14 @@ def read_lines(path, inst, cat):
     return out
 
 
+def undecided(path, doc, cat):
+    """必須の見出しのうち、行も「該当なし（理由）」もないもの（未決）の項番。決めて書かないものは「該当なし（理由）」と書く"""
+    _, lines, na = catalog.parse_design(open(path, encoding="utf-8").read())
+    have = {u for _, n, _, u in lines if n}
+    return [i for i, r in sorted(cat.records.get(doc, {}).items())
+            if r["記載"] == "必須" and i not in have and i not in na]
+
+
 def plan(folder):
     """転記の計画。({相対パス: {書類実体ID: [行]}}, {相対パス: 新規作成時の見出し}, {書類実体ID: 転記元の指紋})"""
     cat = catalog.load(folder)
@@ -81,6 +90,7 @@ def plan(folder):
         lines = read_lines(os.path.join(folder, name), inst, cat)
         func = cat.function_of(inst)
         common = cat.layer(doc) == "共通"
+        missing = undecided(os.path.join(folder, name), doc, cat) if func and not common else []
         title = name[len(inst) + 1:-3]
         docname = cat.docs[doc]["書類名"]
         label = f"{inst} {docname}：{title}"
@@ -92,7 +102,8 @@ def plan(folder):
         home_title = home.split("_", 1)[1]
         # 図を付けていない行は以前と同じ形で指紋を取る（ツールを更新しただけで「要転記」にならないように）
         keyed = [ln if ln[4] else ln[:4] for ln in lines]
-        srcs[inst] = hashlib.sha1(repr((keyed, func, common)).encode()).hexdigest()[:12]
+        # 未決がないときは以前と同じ形で指紋を取る
+        srcs[inst] = hashlib.sha1(repr((keyed, func, common) + ((tuple(missing),) if missing else ())).encode()).hexdigest()[:12]
 
         req, spec, cond, basis, cand, know, tasks = [], [], [], [], [], [], {}
         for lid, text, iid, x, att in lines:
@@ -114,7 +125,7 @@ def plan(folder):
             if sub == "根拠" and main != "テスト":
                 (cand if common else basis).append(entry)
 
-        if not common and (req or cond or basis or spec):
+        if not common and (req or cond or basis or spec or missing):
             body = []
             center = cat.role(doc) == "機能の中心"
             if center or req:
@@ -130,6 +141,11 @@ def plan(folder):
                 body += ["", f"### 実装するときの条件（{inst}）", ""] + cond
             if basis:
                 body += ["", f"### 型・Lint で守る決まり（{inst}・業務の承認済み）", ""] + basis
+            if missing:
+                body += ["", f"### 未決（{inst} {docname}）", "",
+                         "設計書の必須の見出しが空で、まだ決まっていない。推測で実装・テストしない。"
+                         "PR の本文に「未対応: 行ID（未決）」と書く。決まったら設計書に書いて転記し直す。", ""]
+                body += [f"- 未決: {cat.items.get(i, {}).get('設計項目', '')}（{inst}/{i}）" for i in missing]
             put(f"docs/requirements/{home}.md", inst, body,
                 [f"# {home_title}", "", f"> ID 設計の処理設計書 {home.split('_')[0]} と、書類一覧でこの機能に属する書類から転記した要件。"
                  "設計書を直して転記し直す。目印の中は手で直さない。", ""])

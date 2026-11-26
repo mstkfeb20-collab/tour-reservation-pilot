@@ -61,5 +61,27 @@ out=$(TAZUNA_ROOT="$w" python3 "$PY" daily --branch nothing)
 check "日次: ないブランチ" "ブランチ nothing がありません" "$out"
 [ -z "$(git -C "$w" worktree list | sed 1d)" ] && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "NG: 前日のツリーを片付ける"; }
 
+# 単体のゲートの結果（JaCoCo・PIT・SpotBugs）
+q="$w/quality"; mkdir -p "$q/jacoco" "$q/pit"
+printf '<report name="x"><counter type="BRANCH" missed="2" covered="18"/></report>' > "$q/jacoco/jacoco.xml"
+printf '<mutations><mutation detected="true"/><mutation detected="true"/><mutation detected="false"/><mutation detected="true"/></mutations>' > "$q/pit/mutations.xml"
+printf '<BugCollection><BugInstance type="SQL_INJECTION_JDBC"><Class classname="a.Repo"/></BugInstance></BugCollection>' > "$q/spotbugsXml.xml"
+out=$(TAZUNA_ROOT="$w" python3 "$PY" pr --base HEAD --body-file <(printf '対象要件: なし') --quality "$q")
+check "分岐カバレッジを出す" "- 分岐カバレッジ: 90%（18/20）" "$out"
+check "ミューテーションスコアを出す" "- ミューテーション: 75%（3/4）" "$out"
+check "セキュリティの指摘を出す" "  - SQL_INJECTION_JDBC（a.Repo）" "$out"
+# 設計由来のテストの書き換え
+printf 'class BTest {\n    @Test\n    @Tag("S-26-001/D-15003/1")\n    void fee() {\n        assertEquals(300, fee());\n    }\n\n    @Test\n    void other() {\n        assertEquals(1, one());\n    }\n}\n' > "$w/src/test/BTest.java"
+g add -A; g commit -qm btest
+sed -i 's/assertEquals(300/assertEquals(299/' "$w/src/test/BTest.java"; g commit -qam rewrite
+out=$(TAZUNA_ROOT="$w" python3 "$PY" pr --base HEAD~1 --body-file <(printf '対象要件: なし'))
+check "設計の行が変わらないのに、設計由来のテストを書き換えたら出す" "- src/test/BTest.java: S-26-001/D-15003/1" "$out"
+sed -i 's/assertEquals(1, one/assertEquals(2, one/' "$w/src/test/BTest.java"; g commit -qam other
+out=$(TAZUNA_ROOT="$w" python3 "$PY" pr --base HEAD~1 --body-file <(printf '対象要件: なし'))
+grep -q '設計由来のテストの書き換え' <<<"$out" && { fail=$((fail + 1)); echo "NG: 行IDのないテストの書き換えは出さない"; } || pass=$((pass + 1))
+sed -i 's/assertEquals(299/assertEquals(310/' "$w/src/test/BTest.java"; echo y >> "$w/docs/requirements/a.md"; g commit -qam redesign
+out=$(TAZUNA_ROOT="$w" python3 "$PY" pr --base HEAD~1 --body-file <(printf '対象要件: なし'))
+grep -q '設計由来のテストの書き換え' <<<"$out" && { fail=$((fail + 1)); echo "NG: 要件も変えた PR は出さない"; } || pass=$((pass + 1))
+
 echo "report: ${pass} 件成功 / ${fail} 件失敗"
 [ "$fail" -eq 0 ]

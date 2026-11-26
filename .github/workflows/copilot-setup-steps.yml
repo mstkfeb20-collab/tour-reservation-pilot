@@ -38,11 +38,13 @@ jobs:
       - name: Maven の依存ライブラリとプラグインを取っておく
         # プラグインは版まで指定する（短い名前 dependency: は、取得に失敗したとき「プラグインが見つからない」になる）。
         # Maven Central への取得が一時的に失敗することがあるので、3回まで取り直す。
-        # テストまで一度動かして、テスト実行用のプラグインも取る。ここではテストの失敗で止めない
+        # テストまで一度動かして、テスト実行用のプラグインも取る。ここではテストの失敗と、単体のゲート
+        # （分岐カバレッジ・ミューテーション・セキュリティの静的解析）の基準割れでは止めない（プラグインを取るのが目的）
         run: |
           for i in 1 2 3; do
             mvn -B -q org.apache.maven.plugins:maven-dependency-plugin:3.8.1:go-offline \
-              && mvn -B -q verify -Dmaven.test.failure.ignore=true && exit 0
+              && mvn -B -q verify -Dmaven.test.failure.ignore=true -Djacoco.haltOnFailure=false \
+                   -Dtazuna.mutation.min=0 -Dspotbugs.failOnError=false && exit 0
             echo "Maven の取得に失敗しました（${i} 回目）。30秒後に取り直します"; sleep 30
           done
           exit 1

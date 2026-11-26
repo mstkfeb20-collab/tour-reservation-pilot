@@ -1,6 +1,6 @@
 # ハーネス運用ガイド
 
-tazuna を使った開発で、人が知っておくべきことをまとめる。エージェント向けの指示は `AGENTS.md` と `.github/skills/` にある。
+tazuna を使った開発で、人が知っておくべきことをまとめる。エージェント向けの指示は `AGENTS.md` と `.github/skills/` にある。品質管理の対象と指標は [`quality.md`](quality.md)。
 
 ## ルールは破れない場所から守る
 
