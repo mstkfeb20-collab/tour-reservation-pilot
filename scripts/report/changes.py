@@ -53,7 +53,7 @@ def gh(path, root):
 
 
 def open_changes(root):
-    """[{ref, draft, author, title, files}]。読めないときは None"""
+    """[{ref, draft, author, title, files, sha}]。読めないときは None"""
     if platform(root) == "gitlab":
         mrs = gitlab.api("projects/:id/merge_requests?state=opened&per_page=100", root=root)
         if mrs is None:
@@ -66,7 +66,7 @@ def open_changes(root):
                 diffs = (gitlab.api(f"projects/:id/merge_requests/{iid}/changes", root=root) or {}).get("changes", [])
             out.append({"ref": f"!{iid}", "draft": bool(m.get("draft") or m.get("work_in_progress")),
                         "author": (m.get("author") or {}).get("username", ""), "title": m.get("title", ""),
-                        "files": [d.get("new_path") or d.get("old_path") for d in diffs]})
+                        "files": [d.get("new_path") or d.get("old_path") for d in diffs], "sha": m.get("sha", "")})
         return out
     prs = gh("repos/{owner}/{repo}/pulls?state=open&per_page=100", root)
     if prs is None:
@@ -76,8 +76,23 @@ def open_changes(root):
         files = gh(f"repos/{{owner}}/{{repo}}/pulls/{p['number']}/files?per_page=100", root) or []
         out.append({"ref": f"#{p['number']}", "draft": bool(p.get("draft")),
                     "author": (p.get("user") or {}).get("login", ""), "title": p.get("title", ""),
-                    "files": [f.get("filename") for f in files]})
+                    "files": [f.get("filename") for f in files], "sha": (p.get("head") or {}).get("sha", "")})
     return out
+
+
+def read_file(root, path, sha):
+    """PR（MR）の先頭のコミットにあるファイルの中身。読めないときは None"""
+    import base64
+    import urllib.parse
+    q = urllib.parse.quote(path, safe="")
+    if platform(root) == "gitlab":
+        got = gitlab.api(f"projects/:id/repository/files/{q}?ref={sha}", root=root)
+    else:
+        got = gh(f"repos/{{owner}}/{{repo}}/contents/{urllib.parse.quote(path)}?ref={sha}", root)
+    try:
+        return base64.b64decode(got["content"]).decode("utf-8")
+    except (TypeError, KeyError, ValueError):
+        return None
 
 
 def by_document(changes):

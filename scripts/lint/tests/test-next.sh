@@ -123,5 +123,18 @@ check "全要件にテストがあれば、単体テストまで完了" "## 今�
 check "単体で確かめていない行を引き渡す" "S-26-001/D-15008/1 手配会社の検証環境で通しで確かめる" "$out"
 check "確かめた行を数える" "テスト仕様 2 行のうち、単体テストで確かめた 1 行" "$out"
 
+# 設計書の点検の記録（docs/review/設計書の点検.tsv）
+mkdir -p "$w/docs/review"; rec="$w/docs/review/設計書の点検.tsv"
+ls "$w"/docs/design/S-*.md >/dev/null 2>&1 || printf '# S-22-001 処理設計書：予約取消\n\n## D-01002 処理の目的・利用者\n\n- [1] 予約を取り消す\n' > "$w/docs/design/S-22-001_予約取消.md"
+printf '種別\t根拠の行ID\t指摘\t扱い\n質問\tS-22-001/D-01002/1\t団体の上限は何人か\t\n未定義\tS-22-001/D-01002/1\t区分値がない\t\n★\tS-11-001/D-06003\t共通に書く\t\n' > "$rec"
+TAZUNA_ROOT="$w" python3 "$ROOT/scripts/design/review_record.py" stamp >/dev/null
+out=$(run --local)
+check "点検の質問と止める種別が残っていれば、レビューの前に片付けるよう案内する" "**設計書の点検の質問 1 件を issue にする・止める種別 1 件を直すか理由を書く**（書き手）" "$out"
+check "ドラフトの間は CI が警告だけなことを伝える" "ドラフトのままでは CI は警告だけ" "$out"
+sed -i 's/団体の上限は何人か\t$/団体の上限は何人か\tissue: #3/; s/区分値がない\t$/区分値がない\t残す: 次の版で足す/' "$rec"
+grep -q '設計書の点検の' <<<"$(run --local)" && { fail=$((fail + 1)); echo "NG: issue と残す理由があれば案内しない"; } || pass=$((pass + 1))
+f=$(ls "$w"/docs/design/S-*.md | head -1); echo "- [99] 足した行" >> "$f"
+check "点検の後に設計書が変われば、点検し直すよう案内する" "**設計書を点検し直す**（書き手）" "$(run --local)"
+
 echo "next: ${pass} 件成功 / ${fail} 件失敗"
 [ "$fail" -eq 0 ]
