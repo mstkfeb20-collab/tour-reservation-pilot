@@ -132,8 +132,8 @@ def is_bug(issue):
     return "不具合" in labels or (issue.get("title") or "").startswith("【不具合】")
 
 
-def bug_todos(issue, num, body, assigned, pr):
-    """原因区分ごとに、誰が何をするか"""
+def bug_todos(issue, num, body, assigned, pr, fixing=""):
+    """原因区分ごとに、誰が何をするか。fixing: この不具合の番号を書いた、開いている PR（例「PR #19」）"""
     m = re.search(r"^[ \t]*原因区分[:：][ \t]*(\S*)", body or "", re.M)
     cause = next((c for c in BUG_CAUSES if m and m.group(1).startswith(c)), None)
     title = issue.get("title") or ""
@@ -141,6 +141,10 @@ def bug_todos(issue, num, body, assigned, pr):
         return [Todo(7, "社員", f"不具合 #{num} の原因を切り分ける", title,
                      f"案内役に「不具合 #{num} を切り分けて」と頼むと、根拠の行 ID から設計書・転記先・テストを読み、"
                      "どこで食い違ったかの候補を出す。決めたら issue の「原因区分:」を 設計・転記・実装・ハーネス のどれかにする")]
+    if cause == "設計" and fixing:
+        return [Todo(8, "社員", f"不具合 #{num} の設計書の修正（{fixing}）を進める", title,
+                     f"{fixing} の案内（点検・レビュー）に従ってマージし、転記する。転記で変わった要件と、確かめるテスト仕様の行 ID を "
+                     f"issue #{num} に書いてから、実装を割り当てる")]
     if cause == "設計":
         return [Todo(8, "社員", f"不具合 #{num} の設計書を直す", title,
                      "設計書を直して PR でレビューし、転記する。転記で変わった要件を実装する issue を作り、この不具合の番号を書く")]
@@ -157,6 +161,63 @@ def bug_todos(issue, num, body, assigned, pr):
 
 
 # ---- ローカル ----
+
+def review_todos(prs):
+    """設計書の点検の記録（docs/review/設計書の点検.tsv）から、人のレビューの前に片付けることを出す。
+    prs: 開いている PR（--local では None。このときは手元の記録だけを見る）"""
+    sys.path.insert(0, os.path.join(HERE, "..", "design"))
+    import review_record  # noqa: E402
+    rec = review_record.RECORD
+    out, blocked = [], set()
+
+    def todo(where, rows, rank=49):
+        q = sum(1 for r in rows if r["種別"] == "質問")
+        b = len(rows) - q
+        parts = ([f"質問 {q} 件を issue にする"] if q else []) + ([f"止める種別 {b} 件を直すか理由を書く"] if b else [])
+        how = []
+        if q:
+            how.append("質問の行ごとに、スキル base-design-review の下書きで issue（ラベル「業務の決定」）を作り、記録の「扱い」の列に issue: #番号 と書く")
+        if b:
+            how.append("止める種別（食い違い・未定義・場合分けの抜け・書式の解釈）は、設計書を直して点検し直すか、直さないなら「扱い」に「残す: 理由」と書く")
+        how.append("記録をコミットしてから、ドラフトを外してレビューを頼む（それまで PR の CI は COMMON-011 で止まる）")
+        out.append(Todo(rank, "書き手", f"{where}設計書の点検の{'・'.join(parts)}",
+                        "点検で見つかった業務の決めごとと食い違いを、人のレビューの前に片付けます。ドラフトのままでは CI は警告だけなので、気づかずにレビューへ進みがちです",
+                        "\n".join(how)))
+
+    if prs is None:
+        fp_, rows = review_record.read_record(os.path.join(ROOT, rec))
+        if fp_ is not None and catalog.design_files(DESIGN) and fp_ != review_record.fingerprint(DESIGN):
+            out.append(Todo(49, "書き手", "設計書を点検し直す",
+                            "点検の記録の後に設計書が変わっています。記録は点検したときの設計書に対するものです",
+                            f"スキル base-design-review で点検し直し、記録（{rec}）を書き直して python3 scripts/design/review_record.py stamp"))
+        left = review_record.open_rows(rows)
+        if left:
+            todo("", left)
+        return out, blocked
+    for p in prs:
+        files = p.get("files") or []
+        design = [f for f in files if INST_RE_FILE.match(f)]
+        if not design:
+            continue
+        ref = p["ref"]
+        if rec not in files:
+            blocked.add(ref)
+            out.append(Todo(19, "書き手", f"{ref}: 設計書を点検して記録を付ける",
+                            "設計書を変えた PR に、点検の記録がありません。点検が済んでいることが、人のレビューを始める条件です",
+                            f"スキル base-design-review で点検し、結果を {rec} に保存して python3 scripts/design/review_record.py stamp。記録を PR にコミットする"))
+            continue
+        text = changes.read_file(ROOT, rec, p.get("sha", "")) if p.get("sha") else None
+        if text is None:
+            continue
+        left = review_record.open_rows(review_record.parse(text)[1])
+        if left:
+            blocked.add(ref)
+            todo(f"{ref}: ", left, rank=19)
+    return out, blocked
+
+
+INST_RE_FILE = re.compile(r"^docs/design/(?:.*/)?S-\d{2}-\d{3}.*\.md$")
+
 
 def local_state(busy=None):
     """busy: 開いている PR で書いている最中の書類 {書類実体ID: 表示}（--local では空）"""
@@ -309,7 +370,7 @@ def github_state(facts):
             todos.append(question_todo(f"PR #{n}", n, open_q,
                                        "設計書の穴なら設計書を直して転記し、PR に「@copilot main を取り込んで…」とコメントする。"
                                        "業務で決めることなら決めて設計書に書く"))
-        elif ci and all(r.get("conclusion") == "success" for r in ci[:1]):
+        elif ci and all(r.get("conclusion") == "success" for r in ci[:1]) and f"#{n}" not in facts.get("review_blocked", ()):
             todos.append(Todo(20, "社員", f"PR #{n} をレビューしてマージする",
                               "CI が通っています" + ("（Copilot の PR）" if copilot else ""),
                               f"PR #{n} の「tazuna の PR レポート」のコメントで、テスト仕様の行と未対応の作業を確かめる。"
@@ -318,8 +379,11 @@ def github_state(facts):
     linked = {r for i in issues for r in REQ_RE.findall((i.get("title") or "") + (i.get("body") or ""))}
     for i in issues:
         if is_bug(i):
+            ref = re.compile(rf"#{i['number']}\b")
+            fixing = "、".join(f"PR #{p['number']}" for p in prs
+                              if ref.search((p.get("title") or "") + (p.get("body") or "")))
             todos += bug_todos(i, i["number"], i.get("body"), bool(i.get("assignees")),
-                               f"issue #{i['number']} の Assignees で Copilot を選ぶ")
+                               f"issue #{i['number']} の Assignees で Copilot を選ぶ", fixing)
             continue
         found = REQ_RE.findall((i.get("title") or "") + (i.get("body") or ""))
         if found and not any(a["login"] == "Copilot" for a in i.get("assignees") or []) \
@@ -372,7 +436,7 @@ def gitlab_state(facts):
             todos.append(question_todo(f"MR !{n}", n, open_q,
                                        "設計書の穴なら設計書を直して転記し、MR の作者に取り込んでもらう。"
                                        "業務で決めることなら決めて設計書に書く"))
-        elif pipe == "success":
+        elif pipe == "success" and f"!{n}" not in facts.get("review_blocked", ()):
             todos.append(Todo(20, "社員", f"MR !{n} をレビューしてマージする",
                               "CI が通っています",
                               f"MR !{n} の「tazuna の PR レポート」のメモで、テスト仕様の行と未対応の作業を確かめる。"
@@ -384,8 +448,11 @@ def gitlab_state(facts):
     linked = {r for i in issues for r in REQ_RE.findall((i.get("title") or "") + (i.get("description") or ""))}
     for i in issues:
         if is_bug(i):
+            ref = re.compile(rf"#{i['iid']}\b")
+            fixing = "、".join(f"MR !{m['iid']}" for m in mrs
+                              if ref.search((m.get("title") or "") + (m.get("description") or "")))
             todos += bug_todos(i, i["iid"], i.get("description"), bool(i.get("assignees")),
-                               f"issue #{i['iid']} の Assignee に作業する人を入れる")
+                               f"issue #{i['iid']} の Assignee に作業する人を入れる", fixing)
             continue
         found = REQ_RE.findall((i.get("title") or "") + (i.get("description") or ""))
         ref = re.compile(rf"#{i['iid']}\b")
@@ -449,12 +516,15 @@ def main():
         sys.stdout.write(issue_draft(a.issue))
         return
     busy = {}
+    opened = None
     if not a.local:
-        for inst, prs in changes.by_document(changes.open_changes(ROOT)).items():
+        opened = changes.open_changes(ROOT)
+        for inst, prs in changes.by_document(opened).items():
             st, shown = changes.state_of(prs)
             busy[inst] = f"{st}（{shown}）"
     todos, facts, cat = local_state(busy)
-    todos = setup_state() + todos
+    rtodos, facts["review_blocked"] = review_todos(opened)  # 点検が片付いていない PR は、レビューを案内しない
+    todos = setup_state() + todos + rtodos
     gfacts = {}
     if not a.local:
         t2, gfacts = (gitlab_state if platform() == "gitlab" else github_state)(facts)

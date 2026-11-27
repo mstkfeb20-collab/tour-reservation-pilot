@@ -45,20 +45,32 @@ def read_record(path):
     """(指紋 or None, [行の辞書])"""
     if not os.path.exists(path):
         return None, []
-    fp_, rows = None, []
     with open(path, encoding="utf-8") as fp:
-        for raw in fp.read().splitlines():
-            if raw.startswith(HEAD):
-                fp_ = raw[len(HEAD):].strip()
-                continue
-            if not raw.strip() or raw.startswith("#"):
-                continue
-            cols = raw.split("\t")
-            if cols[0] == COLUMNS[0]:
-                continue
-            cols += [""] * (len(COLUMNS) - len(cols))
-            rows.append(dict(zip(COLUMNS, [c.strip() for c in cols])))
+        return parse(fp.read())
+
+
+def parse(text):
+    """記録の中身から (指紋 or None, [行の辞書])"""
+    fp_, rows = None, []
+    for raw in text.splitlines():
+        if raw.startswith(HEAD):
+            fp_ = raw[len(HEAD):].strip()
+            continue
+        if not raw.strip() or raw.startswith("#"):
+            continue
+        cols = raw.split("\t")
+        if cols[0] == COLUMNS[0]:
+            continue
+        cols += [""] * (len(COLUMNS) - len(cols))
+        rows.append(dict(zip(COLUMNS, [c.strip() for c in cols])))
     return fp_, rows
+
+
+def open_rows(rows):
+    """人のレビューを始める前に片付ける行: 止める種別で「残す」がないもの、質問で issue がないもの（案内役も使う）"""
+    return [r for r in rows
+            if (r["種別"] in BLOCKING and not r["扱い"].startswith("残す"))
+            or (r["種別"] == "質問" and "issue" not in r["扱い"])]
 
 
 def stamp(root, design):
@@ -107,14 +119,14 @@ def check(root, design):
                          "記録は、点検したときの設計書に対するものです。直した後の設計書は点検されていません",
                          "スキル base-design-review で点検し直し、記録を書き直して stamp を実行してください"
                          "（前回の「扱い」は、同じ種別・根拠の行には引き継ぐ）"))
-    for r in rows:
-        kind, how = r["種別"], r["扱い"]
+    for r in open_rows(rows):
+        kind = r["種別"]
         where = f"{r['根拠の行ID']}（{kind}）"
-        if kind in BLOCKING and not how.startswith("残す"):
+        if kind in BLOCKING:
             problems.append((f"{where} {r['指摘']}",
                              f"「{kind}」は、残したまま実装に進むと手戻りになります",
                              "設計書を直して点検し直すか、直さないなら「扱い」の列に「残す: 理由」と書いてください"))
-        if kind == "質問" and "issue" not in how:
+        else:
             problems.append((f"{where} {r['指摘']}",
                              "質問は業務で決めることです。issue にしないと、決まるまで追えません",
                              "スキルが出した下書きで issue を作り、「扱い」の列に「issue: #番号」と書いてください"))
