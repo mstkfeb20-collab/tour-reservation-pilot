@@ -49,12 +49,16 @@ harness:
     - |
       if [ -n "${CI_MERGE_REQUEST_IID:-}" ]; then
         export TAZUNA_IS_PR=1 DESIGN_BASE_REF="origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        # ドラフトの MR では、設計書の点検の確認を警告にする（CI_MERGE_REQUEST_DRAFT は GitLab 16 以降）
+        export TAZUNA_PR_DRAFT="${CI_MERGE_REQUEST_DRAFT:-}"
         TAZUNA_PR_BODY=$(python3 scripts/report/gitlab.py mr-body); export TAZUNA_PR_BODY
       fi
       if bash scripts/lint/run-all.sh; then echo ok > lint-result.txt; else echo ng > lint-result.txt; exit 1; fi
     - bash .github/hooks/tests/test-guard.sh
     - bash scripts/lint/tests/test-design-docs.sh
     - bash scripts/lint/tests/test-design-transcribe.sh
+    - bash scripts/lint/tests/test-review-record.sh
+    - bash scripts/lint/tests/test-mock-scope.sh
     - bash scripts/lint/tests/test-id-design.sh
     - bash scripts/lint/tests/test-ddl-comments.sh
     - bash scripts/lint/tests/test-requirement-traceability.sh
@@ -79,10 +83,10 @@ build:
     key: maven
     paths: [.m2/repository]
   script:
-    - mvn -B verify   # 単体テスト・ArchUnit
+    - mvn -B verify   # 単体テスト・ArchUnit・分岐カバレッジ・ミューテーション・セキュリティの静的解析
   artifacts:
     when: always   # テストが落ちても結果を残す（MR レポートが読む）
-    paths: [target/surefire-reports/]
+    paths: [target/surefire-reports/, target/site/jacoco/jacoco.xml, target/pit-reports/mutations.xml, target/spotbugsXml.xml]
     expire_in: 7 days
 
 mr-report:
@@ -103,7 +107,7 @@ mr-report:
     - |
       LINT=$(cat lint-result.txt 2>/dev/null || echo ng)
       python3 scripts/report/report.py pr --base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" --body-file pr-body.md \
-        --surefire target/surefire-reports --lint "$LINT" > report.md
+        --surefire target/surefire-reports --quality target --lint "$LINT" > report.md
       cat report.md
       python3 scripts/report/gitlab.py mr-note report.md
 

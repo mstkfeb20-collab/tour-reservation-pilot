@@ -21,6 +21,7 @@ scripts/lint/common/*
 scripts/tazuna-update.sh
 harness/GUIDE.md
 harness/design-and-transcription.md
+harness/quality.md
 scripts/lint/tests/*
 scripts/design/*
 scripts/report/*

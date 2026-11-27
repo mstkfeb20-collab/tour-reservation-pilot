@@ -1,6 +1,7 @@
 """開発期間のレポート。git・設計書・要件・作業一覧・テスト・CI の結果を読んで集めるだけで、何も書き換えない。
 
     python3 scripts/report/report.py pr --base origin/develop --body-file pr.md [--surefire target/surefire-reports] [--lint ok|ng]
+                                        [--quality <JaCoCo・PIT・SpotBugs の結果のフォルダ>]
     python3 scripts/report/report.py daily --branch develop [--since "24 hours ago"]
 
 pr:    PR 単位。対象要件ごとに、テスト仕様の行がテストで確かめられたか、作業一覧の行のうち未対応にしたもの、
@@ -138,6 +139,60 @@ def surefire(folder):
     return total, fail, err, skip, failed
 
 
+def quality(folder):
+    """単体のゲートの結果。{"分岐カバレッジ": (網羅, 全体), "ミューテーション": (検出, 全体), "セキュリティ": [指摘]}。ないものは入れない"""
+    out = {}
+    if not folder or not os.path.isdir(folder):
+        return out
+    found = {os.path.basename(p): p for p in glob.glob(os.path.join(folder, "**", "*.xml"), recursive=True)}
+    if "jacoco.xml" in found:
+        for c in ET.parse(found["jacoco.xml"]).getroot().findall("counter"):
+            if c.get("type") == "BRANCH":
+                hit, miss = int(c.get("covered", 0)), int(c.get("missed", 0))
+                out["分岐カバレッジ"] = (hit, hit + miss)
+    if "mutations.xml" in found:
+        ms = ET.parse(found["mutations.xml"]).getroot().findall("mutation")
+        out["ミューテーション"] = (sum(1 for m in ms if m.get("detected") == "true"), len(ms))
+    if "spotbugsXml.xml" in found:
+        out["セキュリティ"] = [f"{b.get('type')}（{(b.find('Class') if b.find('Class') is not None else b).get('classname', '')}）"
+                             for b in ET.parse(found["spotbugsXml.xml"]).getroot().iter("BugInstance")]
+    return out
+
+
+TAG_RE = re.compile(r'@Tag\("(S-\d{2}-\d{3}/D-\d{5}/\d+)"\)')
+METHOD_RE = re.compile(r"\bvoid\s+\w+\s*\(")
+
+
+def rewritten_design_tests(base):
+    """設計の行が変わっていないのに、設計由来（行IDの @Tag 付き）のテストの既存の行を書き換えたもの。[(ファイル, [行ID])]
+    期待値を実装に合わせて直すと、テストは通るが設計どおりかは確かめなくなる。設計（転記先）を変えた PR は対象にしない"""
+    changed = git("diff", "--name-only", f"{base}...HEAD").stdout.splitlines()
+    if any(p.startswith("docs/requirements/") for p in changed):
+        return []
+    out = []
+    for path in [p for p in changed if p.startswith("src/test/") and p.endswith(".java")]:
+        old = git("show", f"{base}:{path}")
+        if old.returncode != 0:
+            continue  # 新しく足したテスト
+        lines = old.stdout.splitlines()
+        removed = []
+        for h in re.finditer(r"^@@ -(\d+)(?:,(\d+))? ", git("diff", "-U0", f"{base}...HEAD", "--", path).stdout, re.M):
+            start, count = int(h.group(1)), int(h.group(2) if h.group(2) is not None else 1)
+            removed += range(start, start + count)
+        ids = set()
+        for n in removed:
+            i = n - 1
+            while i >= 0 and not METHOD_RE.search(lines[i]):  # 書き換えた行を含むテストメソッドの宣言まで戻る
+                i -= 1
+            j = i - 1
+            while j >= 0 and lines[j].strip().startswith("@"):  # そのメソッドの注釈
+                ids.update(TAG_RE.findall(lines[j]))
+                j -= 1
+        if ids:
+            out.append((path, sorted(ids)))
+    return out
+
+
 def git(*args, cwd=None):
     return subprocess.run(["git", "-C", cwd or ROOT, *args], capture_output=True, text=True)
 
@@ -163,7 +218,7 @@ def body_lines(body, label):
     return out
 
 
-def pr_report(base, body, surefire_dir=None, lint=None):
+def pr_report(base, body, surefire_dir=None, lint=None, quality_dir=None):
     reqs, specs = requirements(ROOT)
     refs = test_refs(ROOT)
     targets = [r for line in body_lines(body, "対象要件") for r in REQ_RE.findall(line)]
@@ -277,6 +332,24 @@ def pr_report(base, body, surefire_dir=None, lint=None):
     touched = [p for p in changed if any(fnmatch.fnmatchcase(p, pat) for pat in pats)]
     out.append(f"- 変更したファイル: {len(changed)}")
     out.append(f"- 保護ファイルの変更: {'なし' if not touched else '**' + ', '.join(touched) + '**'}")
+    q = quality(quality_dir)
+    if q:
+        out += ["", "### 単体のゲート（基準値は pom.xml の tazuna.*）", ""]
+        for k in ("分岐カバレッジ", "ミューテーション"):
+            if k in q:
+                hit, total = q[k]
+                rate = f"{hit * 100 // total}%" if total else "—"
+                out.append(f"- {k}: {rate}（{hit}/{total}）" + ("　※ミューテーションスコア＝わざと壊したコードをテストが検出した割合" if k == "ミューテーション" else ""))
+        if "セキュリティ" in q:
+            sec = q["セキュリティ"]
+            out.append(f"- セキュリティの指摘: {len(sec)} 件" if not sec else f"- セキュリティの指摘: **{len(sec)} 件**")
+            out += [f"  - {b}" for b in sec[:20]]
+    rew = rewritten_design_tests(base)
+    if rew:
+        out += ["", "### **設計由来のテストの書き換え**", "",
+                "設計（要件・テスト仕様）を変えていないのに、テスト仕様の行から作ったテストを書き換えています。"
+                "期待値を実装に合わせて直すと、テストは通っても設計どおりかは確かめなくなります。書き換えた理由を確かめてください。", ""]
+        out += [f"- {p}: {', '.join(ids)}" for p, ids in rew]
     return "\n".join(out) + "\n"
 
 
@@ -342,13 +415,14 @@ def main():
     p.add_argument("--body-file")
     p.add_argument("--surefire")
     p.add_argument("--lint", choices=["ok", "ng"])
+    p.add_argument("--quality")
     p = sub.add_parser("daily")
     p.add_argument("--branch", required=True)
     p.add_argument("--since", default="24 hours ago")
     a = ap.parse_args()
     if a.cmd == "pr":
         body = read(a.body_file) if a.body_file else os.environ.get("TAZUNA_PR_BODY", "")
-        sys.stdout.write(pr_report(a.base, body, a.surefire, a.lint))
+        sys.stdout.write(pr_report(a.base, body, a.surefire, a.lint, a.quality))
     else:
         sys.stdout.write(daily_report(a.branch, a.since))
 

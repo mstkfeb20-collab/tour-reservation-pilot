@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SpotBugs で見る範囲: セキュリティの分類（FindSecBugs を含む）だけ。pom.xml の spotbugs-maven-plugin から読む -->
+<FindBugsFilter>
+  <Match>
+    <Bug category="SECURITY"/>
+  </Match>
+</FindBugsFilter>

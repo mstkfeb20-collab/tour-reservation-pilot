@@ -3,7 +3,8 @@ name: verify
 on:
   pull_request:
     # edited: PR の本文（対象要件）を直したときもやり直す
-    types: [opened, synchronize, reopened, edited]
+    # ready_for_review: ドラフトを外したとき（設計書の点検の確認を、警告から止めるに切り替える）
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
     # 統合に使うブランチ。案件の運用（develop・release など）に合わせて足す
     branches: [main, master, develop, 'release/**']
@@ -28,6 +29,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           EVENT_BODY: ${{ github.event.pull_request.body }}
           TAZUNA_IS_PR: ${{ github.event_name == 'pull_request' && '1' || '' }}
+          TAZUNA_PR_DRAFT: ${{ github.event.pull_request.draft && '1' || '' }}
           DESIGN_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
         run: |
           # PR の本文は、起動した時点のものではなく今のものを読む（承認待ちの後に流したとき、エージェントが本文を書き換えた後など）
@@ -52,6 +54,10 @@ jobs:
         run: bash scripts/lint/tests/test-report.sh
       - name: 案内役の自己テスト
         run: bash scripts/lint/tests/test-next.sh
+      - name: Lint の自己テスト（モックの範囲）
+        run: bash scripts/lint/tests/test-mock-scope.sh
+      - name: 設計書の点検の記録の自己テスト
+        run: bash scripts/lint/tests/test-review-record.sh
       - name: 設計書レビューの材料の自己テスト
         run: bash scripts/lint/tests/test-review-pack.sh
       - name: GitLab の道具の自己テスト
@@ -71,7 +77,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - name: mvn verify（単体テスト・ArchUnit）
+      - name: mvn verify（単体テスト・ArchUnit・分岐カバレッジ・ミューテーション・セキュリティの静的解析）
         run: mvn -B verify
       - name: テストの結果を残す（PR レポートが読む）
         if: always()
@@ -79,6 +85,16 @@ jobs:
         with:
           name: surefire-reports
           path: target/surefire-reports/
+          if-no-files-found: ignore
+      - name: 単体のゲートの結果を残す（PR レポートが読む）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: |
+            target/site/jacoco/jacoco.xml
+            target/pit-reports/mutations.xml
+            target/spotbugsXml.xml
           if-no-files-found: ignore
 
   report:
@@ -99,6 +115,11 @@ jobs:
           name: surefire-reports
           path: surefire-reports
         continue-on-error: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: quality-reports
+          path: quality-reports
+        continue-on-error: true
       - name: レポートを作ってコメントする
         env:
           GH_TOKEN: ${{ github.token }}
@@ -107,7 +128,7 @@ jobs:
           LINT: ${{ needs.harness.result == 'success' && 'ok' || 'ng' }}
         run: |
           gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq .body > pr-body.md
-          python3 scripts/report/report.py pr --base "$BASE_REF" --body-file pr-body.md --surefire surefire-reports --lint "$LINT" > report.md
+          python3 scripts/report/report.py pr --base "$BASE_REF" --body-file pr-body.md --surefire surefire-reports --quality quality-reports --lint "$LINT" > report.md
           cat report.md >> "$GITHUB_STEP_SUMMARY"
           # 同じコメントを更新する（PR に何度も足さない）
           { echo '<!-- tazuna:pr-report -->'; cat report.md; } > comment.md
