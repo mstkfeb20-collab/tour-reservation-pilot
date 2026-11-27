@@ -9,8 +9,6 @@
 
 `文章` のままの条件は、月次の見直しで上の層に移せないか検討する。
 
-> 以下は見本です（題材はツアー予約）。案件では自分の不変条件に置き換えてください。
-
 ## INV-001 金額は double / float で扱わない
 - 防ぐ層: 設計
 - 担保: src/main/java/com/example/domain/Money.java scripts/lint/domain/java-money-no-float.sh
