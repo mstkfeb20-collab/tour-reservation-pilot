@@ -30,5 +30,5 @@
 ## INV-004 返金額は0円を下回らない
 - 防ぐ層: 設計
 - 担保: src/main/java/com/example/domain/Money.java src/main/java/com/example/domain/CancellationPolicy.java
-- 理由: マイナスの返金はお客様への請求になり、取消の手続きでは扱えない。
+- 理由: マイナスの返金は意味を持たない。入金額が取消料より少ないときの差額は、返金をマイナスにせず、請求額として請求待ち（CLAIM）に登録する（S-22-002/D-04001/5。#12）。
 - 補足: `Money` はマイナスの値を持てない。差し引きは `minusOrZero` を使う。
