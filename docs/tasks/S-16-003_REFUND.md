@@ -2,7 +2,7 @@
 
 > ID 設計から転記した作業。実装の issue から参照する。
 
-<!-- tazuna:design S-16-003 begin src=542836306ecc（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-16-003 begin src=906747d566b5（scripts/design/transcribe.py が作る。手で直さない） -->
 ## Lint を足す
 
 - [ ] CREATED_AT・CREATED_BY・UPDATED_AT・UPDATED_BY を持つ（S-16-003/D-05010/1・監査項目）
