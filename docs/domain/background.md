@@ -40,7 +40,7 @@
 - 性能は本番相当（ツアー5千件・予約60万件）のデータで測る（S-19-001/D-12007/1・性能測定の条件）
 <!-- tazuna:design S-19-001 end -->
 
-<!-- tazuna:design S-22-001 begin src=17418e9b2256（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-22-001 begin src=710c8ec12034（scripts/design/transcribe.py が作る。手で直さない） -->
 ## S-22-001 処理設計書：振込データ取込
 
 - 予約担当が毎朝手作業で行っている入金の消込をなくし、振込済への更新を朝7時までに済ませる（S-22-001/D-01002/1・処理の目的・利用者）
@@ -54,7 +54,7 @@
 - J110 は S1 受信確認・S2 形式検査・S3 消込・S4 リスト出力・S5 退避 の5ステップ（S-23-001/D-08001/1・ジョブ一覧・ジョブネット）
 <!-- tazuna:design S-23-001 end -->
 
-<!-- tazuna:design S-24-001 begin src=49a2ee82f579（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-24-001 begin src=3967873f43de（scripts/design/transcribe.py が作る。手で直さない） -->
 ## S-24-001 IF定義書：IF-11振込入金通知ファイル
 
 - 全銀協の振込入金通知フォーマットと、取引銀行の「ファイル伝送サービス利用要領」を正とする（S-24-001/D-07013/1・相手システムの仕様書）
@@ -74,21 +74,28 @@
 - 新しいユースケースは ReservationService#reserve を手本にする（S-34-001/D-18007/1・手本とするコード）
 <!-- tazuna:design S-34-001 end -->
 
-<!-- tazuna:design S-20-001 begin src=1d80c3a826fe（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-20-001 begin src=42455c351482（scripts/design/transcribe.py が作る。手で直さない） -->
 ## S-20-001 データモデル設計書：データモデル設計書
 
-- TOURINFO と MEMBER はマスタ、RESERVE・TRANSFER_IMPORT・REFUND はトランザクション（S-20-001/D-05014/1・マスタとトランザクションの区別）
+- TOURINFO と MEMBER はマスタ、RESERVE・TRANSFER_IMPORT・REFUND・CLAIM はトランザクション（S-20-001/D-05014/2・マスタとトランザクションの区別）
 <!-- tazuna:design S-20-001 end -->
 
-<!-- tazuna:design S-16-003 begin src=542836306ecc（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-16-003 begin src=906747d566b5（scripts/design/transcribe.py が作る。手で直さない） -->
 ## S-16-003 テーブル設計書：REFUND
 
-- 振込済の予約の取消のときだけ増える。年に数千件の見込み（S-16-003/D-05011/1・データ量・増加見込み）
+- 予約の取消で、入金額が取消料より多いときに増える（振込済の予約と、不一致の入金がある未振込の予約）。年に数千件の見込み（S-16-003/D-05011/2・データ量・増加見込み）
 - トランザクション（S-16-003/D-05014/1・マスタとトランザクションの区別）
 <!-- tazuna:design S-16-003 end -->
 
-<!-- tazuna:design S-22-002 begin src=a408fb1addbb（scripts/design/transcribe.py が作る。手で直さない） -->
+<!-- tazuna:design S-22-002 begin src=6e414b6f6ff6（scripts/design/transcribe.py が作る。手で直さない） -->
 ## S-22-002 処理設計書：予約取消
 
 - お客様（会員）が自分の予約を、窓口担当がお客様から電話で受けた予約を取り消す（S-22-002/D-01002/1・処理の目的・利用者）
 <!-- tazuna:design S-22-002 end -->
+
+<!-- tazuna:design S-16-006 begin src=ffb64bb38915（scripts/design/transcribe.py が作る。手で直さない） -->
+## S-16-006 テーブル設計書：CLAIM
+
+- 予約の取消で、入金額が取消料より少ないときに増える（入金のない予約の取消を含む）。未振込の予約の取消が多いと、REFUND より多くなりうる（S-16-006/D-05011/1・データ量・増加見込み）
+- トランザクション（S-16-006/D-05014/1・マスタとトランザクションの区別）
+<!-- tazuna:design S-16-006 end -->
