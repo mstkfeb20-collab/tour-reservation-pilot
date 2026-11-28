@@ -19,7 +19,7 @@ public record TransferImportOutcome(
     }
 
     public boolean hasExceptions() {
-        return records.stream().anyMatch(record -> record.result() != com.example.domain.TransferImportResultCode.SETTLED);
+        return records.stream().anyMatch(record -> record.result().isMismatch() || record.result().isRefundTarget());
     }
 
     public record PaymentHandoff(String reserveNo, LocalDate paidDate) {

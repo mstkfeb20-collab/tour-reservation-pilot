@@ -10,9 +10,11 @@ import com.example.domain.ReservationRepository;
 import com.example.domain.Tour;
 import com.example.domain.TransferStatus;
 import com.example.infrastructure.InMemoryCancellationAuditRepository;
+import com.example.infrastructure.InMemoryClaimRepository;
 import com.example.infrastructure.InMemoryRefundRepository;
 import com.example.infrastructure.InMemoryReservationRepository;
 import com.example.infrastructure.InMemoryTourRepository;
+import com.example.infrastructure.InMemoryTransferImportRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -39,6 +41,8 @@ class ReservationCancellationTest {
     private InMemoryTourRepository tours;
     private InMemoryReservationRepository reservations;
     private InMemoryRefundRepository refunds;
+    private InMemoryClaimRepository claims;
+    private InMemoryTransferImportRepository imports;
     private InMemoryCancellationAuditRepository audit;
     private ReservationService service;
 
@@ -48,8 +52,10 @@ class ReservationCancellationTest {
         tours.save(new Tour("T001", "春の京都", DEPARTURE, Money.yen(30_000), Money.yen(15_000), 10));
         reservations = new InMemoryReservationRepository();
         refunds = new InMemoryRefundRepository();
+        claims = new InMemoryClaimRepository();
+        imports = new InMemoryTransferImportRepository();
         audit = new InMemoryCancellationAuditRepository();
-        service = new ReservationService(tours, reservations, refunds, audit);
+        service = new ReservationService(tours, reservations, refunds, claims, imports, audit);
     }
 
     @Test
@@ -59,8 +65,9 @@ class ReservationCancellationTest {
 
         ReservationService.CancelResult result = cancel("R1", "都合により取消", TODAY, "M001");
 
-        assertEquals(Money.zero(), result.fee());
+        assertEquals(Money.yen(30_000), result.fee());
         assertEquals(Money.zero(), result.refund());
+        assertEquals(Money.yen(30_000), result.claim());
         assertEquals(TransferStatus.CANCELLED, reservation.status());
         assertEquals(TODAY, reservation.cancelDate());
         assertEquals("都合により取消", reservation.cancelReason());
@@ -71,6 +78,7 @@ class ReservationCancellationTest {
     }
 
     @Test
+    @Tag("S-26-002/D-15001/2")
     @DisplayName("振込済予約は入金額から取消料を引いた返金待ちを1件登録する")
     void paidCancellationCreatesRefund() {
         Reservation reservation = reserve("R1", "M001");
@@ -113,7 +121,7 @@ class ReservationCancellationTest {
             public void rollbackRegistration(String reserveNo) {
             }
         };
-        service = new ReservationService(tours, reservations, failingRefunds, audit);
+        service = new ReservationService(tours, reservations, failingRefunds, claims, imports, audit);
 
         assertThrows(
             IllegalStateException.class,
@@ -140,7 +148,7 @@ class ReservationCancellationTest {
             public void remove(CancellationAudit entry) {
             }
         };
-        service = new ReservationService(tours, reservations, refunds, failingAudit);
+        service = new ReservationService(tours, reservations, refunds, claims, imports, failingAudit);
 
         assertThrows(
             IllegalStateException.class,
@@ -161,7 +169,8 @@ class ReservationCancellationTest {
         ReservationService.CancelResult result = cancel("R1", "予定変更", TODAY, "M001");
 
         assertEquals(Money.zero(), result.refund());
-        assertEquals(Money.zero(), refunds.entries().get(0).refundAmount());
+        assertEquals(0, refunds.entries().size());
+        assertEquals(Money.yen(20_000), claims.entries().get(0).claimAmount());
     }
 
     @Test
@@ -177,6 +186,7 @@ class ReservationCancellationTest {
     }
 
     @Test
+    @Tag("S-26-002/D-15001/5")
     @DisplayName("会員は自分の予約だけ取り消せ、窓口担当は他の会員の予約も取り消せる")
     void authorization() {
         Reservation own = reserve("R1", "M001");
@@ -207,6 +217,7 @@ class ReservationCancellationTest {
     }
 
     @Test
+    @Tag("S-26-002/D-15001/3")
     @DisplayName("取消済み予約は再度取り消せず残席・返金待ちは変わらない")
     void alreadyCancelledIsRejectedWithoutSideEffects() {
         reserve("R1", "M001");
@@ -264,6 +275,7 @@ class ReservationCancellationTest {
     }
 
     @Test
+    @Tag("S-26-002/D-15001/4")
     @DisplayName("J110との版番号競合後に振込済として読み直して1回だけ再試行する")
     void retriesAfterJ110PaymentWinsVersionConflict() {
         Reservation reservation = reserve("R1", "M001");
@@ -300,7 +312,7 @@ class ReservationCancellationTest {
                 );
             }
         };
-        service = new ReservationService(tours, racingReservations, refunds, audit);
+        service = new ReservationService(tours, racingReservations, refunds, claims, imports, audit);
 
         ReservationService.CancelResult result = cancel("R1", "取消理由", TODAY, "M001");
 
@@ -312,6 +324,7 @@ class ReservationCancellationTest {
     }
 
     @Test
+    @Tag("S-26-002/D-15003/2")
     @DisplayName("取消料の1円未満を切り捨てる")
     void cancellationFeeRoundsDown() {
         tours.save(new Tour("T002", "料金端数", DEPARTURE, Money.yen(10_003), Money.zero(), 3));
@@ -324,6 +337,7 @@ class ReservationCancellationTest {
     }
 
     @Test
+    @Tag("S-26-002/D-15003/1")
     @DisplayName("取消料率の境界は21・20・8・7・2・1日前で切り替わり、0日前は取消不可")
     void cancellationRateBoundaries() {
         reserve("R1", "M001");

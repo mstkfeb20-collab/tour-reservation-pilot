@@ -9,7 +9,6 @@ package com.example.domain;
  *          7日前〜2日前  30%
  *          前日          40%
  *          当日以降      取消不可（REQ-002）
- * 未振込の取消には取消料を請求しない。
  * </pre>
  */
 public final class CancellationPolicy {
@@ -39,19 +38,16 @@ public final class CancellationPolicy {
         return 40;
     }
 
-    /** 取消料。未振込なら請求しない。 */
+    /** 取消料。 */
     public static Money fee(Reservation reservation, long daysBeforeDeparture) {
-        if (reservation.status() != TransferStatus.PAID) {
-            return Money.zero();
-        }
         return reservation.sumPrice().percent(rate(daysBeforeDeparture));
     }
 
-    /** 返金額 = 振込額 − 取消料。0円を下回らない（INV-004）。 */
-    public static Money refund(Reservation reservation, long daysBeforeDeparture) {
-        if (reservation.status() != TransferStatus.PAID) {
-            return Money.zero();
-        }
-        return reservation.paidAmount().minusOrZero(fee(reservation, daysBeforeDeparture));
+    public static Money refund(Money paid, Money fee) {
+        return paid.minusOrZero(fee);
+    }
+
+    public static Money claim(Money paid, Money fee) {
+        return fee.minusOrZero(paid);
     }
 }

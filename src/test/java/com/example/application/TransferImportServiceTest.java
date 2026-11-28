@@ -203,6 +203,21 @@ class TransferImportServiceTest {
             }
 
             @Override
+            public List<TransferImportRecord> findMismatches(String reserveNo) {
+                return imports.findMismatches(reserveNo);
+            }
+
+            @Override
+            public void settleMismatches(List<TransferImportRecord> records) {
+                imports.settleMismatches(records);
+            }
+
+            @Override
+            public void restoreMismatches(List<TransferImportRecord> records) {
+                imports.restoreMismatches(records);
+            }
+
+            @Override
             public boolean saveSettlement(Reservation value, long expectedVersion, boolean latePayment, TransferImportRecord record) {
                 reservation.cancel(ACCOUNT_DATE, "取消");
                 return false;
@@ -250,6 +265,21 @@ class TransferImportServiceTest {
             @Override
             public void save(TransferImportRecord record) {
                 imports.save(record);
+            }
+
+            @Override
+            public List<TransferImportRecord> findMismatches(String reserveNo) {
+                return imports.findMismatches(reserveNo);
+            }
+
+            @Override
+            public void settleMismatches(List<TransferImportRecord> records) {
+                imports.settleMismatches(records);
+            }
+
+            @Override
+            public void restoreMismatches(List<TransferImportRecord> records) {
+                imports.restoreMismatches(records);
             }
 
             @Override

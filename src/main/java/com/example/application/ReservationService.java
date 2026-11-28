@@ -3,6 +3,7 @@ package com.example.application;
 import com.example.domain.CancellationAudit;
 import com.example.domain.CancellationAuditRepository;
 import com.example.domain.CancellationPolicy;
+import com.example.domain.ClaimRepository;
 import com.example.domain.Money;
 import com.example.domain.Reservation;
 import com.example.domain.ReservationRepository;
@@ -10,10 +11,13 @@ import com.example.domain.RefundRepository;
 import com.example.domain.Tour;
 import com.example.domain.TourRepository;
 import com.example.domain.TransferStatus;
+import com.example.domain.TransferImportRecord;
+import com.example.domain.TransferImportRepository;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
+import java.util.List;
 
 /** ツアー予約のユースケース。domain だけに依存する。日付はテストできるよう引数で受け取る。 */
 public class ReservationService {
@@ -24,17 +28,23 @@ public class ReservationService {
     private final TourRepository tours;
     private final ReservationRepository reservations;
     private final RefundRepository refunds;
+    private final ClaimRepository claims;
+    private final TransferImportRepository imports;
     private final CancellationAuditRepository cancellationAudit;
 
     public ReservationService(
         TourRepository tours,
         ReservationRepository reservations,
         RefundRepository refunds,
+        ClaimRepository claims,
+        TransferImportRepository imports,
         CancellationAuditRepository cancellationAudit
     ) {
         this.tours = tours;
         this.reservations = reservations;
         this.refunds = refunds;
+        this.claims = claims;
+        this.imports = imports;
         this.cancellationAudit = cancellationAudit;
     }
 
@@ -123,8 +133,13 @@ public class ReservationService {
                     throw new IllegalStateException("取消期限を過ぎています");
                 }
                 Money fee = CancellationPolicy.fee(reservation, days);
-                Money refund = CancellationPolicy.refund(reservation, days);
-                boolean paid = reservation.status() == TransferStatus.PAID;
+                List<TransferImportRecord> mismatches = reservation.status() == TransferStatus.UNPAID
+                    ? imports.findMismatches(reserveNo) : List.of();
+                Money paid = reservation.status() == TransferStatus.PAID
+                    ? reservation.paidAmount()
+                    : mismatches.stream().map(TransferImportRecord::amount).reduce(Money.zero(), Money::plus);
+                Money refund = CancellationPolicy.refund(paid, fee);
+                Money claim = CancellationPolicy.claim(paid, fee);
                 long expectedVersion = reservation.version();
                 synchronized (tour) {
                     if (!reservations.saveCancellation(
@@ -139,6 +154,8 @@ public class ReservationService {
                             paid,
                             fee,
                             refund,
+                            claim,
+                            mismatches,
                             actor.id(),
                             tour
                         )
@@ -148,7 +165,7 @@ public class ReservationService {
                         }
                         continue;
                     }
-                    return new CancelResult(fee, refund);
+                    return new CancelResult(fee, paid, refund, claim);
                 }
             }
         }
@@ -159,27 +176,39 @@ public class ReservationService {
         String reserveNo,
         LocalDate cancelDate,
         int headcount,
-        boolean paid,
+        Money paid,
         Money fee,
         Money refund,
+        Money claim,
+        List<TransferImportRecord> mismatches,
         String operator,
         Tour tour
     ) {
         boolean refundRegistered = false;
-        CancellationAudit auditEntry = new CancellationAudit(reserveNo, operator, fee, refund);
+        boolean claimRegistered = false;
+        CancellationAudit auditEntry = new CancellationAudit(reserveNo, operator, fee, paid, refund, claim);
         try {
             tour.releaseSeats(headcount);
             tours.save(tour);
-            if (paid) {
+            imports.settleMismatches(mismatches);
+            if (!refund.equals(Money.zero())) {
                 refunds.register(reserveNo, cancelDate, refund, fee, operator);
                 refundRegistered = true;
+            }
+            if (!claim.equals(Money.zero())) {
+                claims.register(reserveNo, cancelDate, claim, fee, paid, operator);
+                claimRegistered = true;
             }
             cancellationAudit.record(auditEntry);
         } catch (RuntimeException exception) {
             cancellationAudit.remove(auditEntry);
+            if (claimRegistered) {
+                claims.rollbackRegistration(reserveNo);
+            }
             if (refundRegistered) {
                 refunds.rollbackRegistration(reserveNo);
             }
+            imports.restoreMismatches(mismatches);
             tour.reserveSeats(headcount);
             tours.save(tour);
             throw exception;
@@ -227,7 +256,7 @@ public class ReservationService {
         }
     }
 
-    /** 取消の結果。取消料と返金額。 */
-    public record CancelResult(Money fee, Money refund) {
+    /** 取消の結果。 */
+    public record CancelResult(Money fee, Money paid, Money refund, Money claim) {
     }
 }

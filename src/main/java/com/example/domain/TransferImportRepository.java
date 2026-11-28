@@ -1,6 +1,7 @@
 package com.example.domain;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 public interface TransferImportRepository {
@@ -8,6 +9,12 @@ public interface TransferImportRepository {
     Optional<TransferImportRecord> findByAccountDateAndInquiryNo(LocalDate accountDate, String inquiryNo);
 
     void save(TransferImportRecord record);
+
+    List<TransferImportRecord> findMismatches(String reserveNo);
+
+    void settleMismatches(List<TransferImportRecord> records);
+
+    void restoreMismatches(List<TransferImportRecord> records);
 
     /** 予約の振込済更新と取込結果をまとめて保存し、版番号競合なら false を返す。 */
     boolean saveSettlement(
