@@ -62,38 +62,50 @@ public class TransferImportService {
             }
 
             String reserveNo = extractReserveNo(detail);
+            Optional<Reservation> found = reserveNo == null ? Optional.empty() : reservations.findByReserveNo(reserveNo);
             Decision decision = classify(detail, reserveNo);
-            TransferImportRecord result = new TransferImportRecord(
-                detail.accountDate(),
-                detail.inquiryNo(),
-                detail.amount(),
-                detail.payerName(),
-                reserveNo,
-                decision.resultCode(),
-                fileName
-            );
+            TransferImportRecord result;
             if (decision.resultCode() == TransferImportResultCode.SETTLED) {
-                if (imports.saveSettlement(decision.reservation(), decision.expectedVersion(), decision.latePayment(), result)) {
-                    recordSettlementSideEffects(result, handoffs, auditEntries);
-                } else {
-                    result = new TransferImportRecord(
-                        detail.accountDate(),
-                        detail.inquiryNo(),
-                        detail.amount(),
-                        detail.payerName(),
-                        reserveNo,
-                        TransferImportResultCode.REVIEW,
-                        fileName
-                    );
-                    imports.save(result);
+                result = importDetail(detail, reserveNo, fileName, decision, handoffs, auditEntries);
+            } else if (found.isPresent()) {
+                synchronized (found.get()) {
+                    result = importDetail(detail, reserveNo, fileName, classify(detail, reserveNo), handoffs, auditEntries);
                 }
             } else {
-                imports.save(result);
+                result = importDetail(detail, reserveNo, fileName, decision, handoffs, auditEntries);
             }
             results.add(result);
         }
         imports.saveFileSummary(file.creationDate(), file.details().size(), file.totalAmount());
         return new TransferImportOutcome(results, handoffs, auditEntries, false);
+    }
+
+    private TransferImportRecord importDetail(
+        BankTransferDetail detail,
+        String reserveNo,
+        String fileName,
+        Decision decision,
+        List<TransferImportOutcome.PaymentHandoff> handoffs,
+        List<TransferImportOutcome.PaymentAudit> auditEntries
+    ) {
+        TransferImportRecord result = new TransferImportRecord(
+            detail.accountDate(), detail.inquiryNo(), detail.amount(), detail.payerName(), reserveNo,
+            decision.resultCode(), fileName
+        );
+        if (decision.resultCode() == TransferImportResultCode.SETTLED) {
+            if (imports.saveSettlement(decision.reservation(), decision.expectedVersion(), decision.latePayment(), result)) {
+                recordSettlementSideEffects(result, handoffs, auditEntries);
+            } else {
+                result = new TransferImportRecord(
+                    detail.accountDate(), detail.inquiryNo(), detail.amount(), detail.payerName(), reserveNo,
+                    TransferImportResultCode.REVIEW, fileName
+                );
+                imports.save(result);
+            }
+        } else {
+            imports.save(result);
+        }
+        return result;
     }
 
     private void recordSettlementSideEffects(

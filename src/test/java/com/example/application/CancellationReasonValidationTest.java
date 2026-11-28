@@ -3,9 +3,11 @@ package com.example.application;
 import com.example.domain.Money;
 import com.example.domain.Tour;
 import com.example.infrastructure.InMemoryCancellationAuditRepository;
+import com.example.infrastructure.InMemoryClaimRepository;
 import com.example.infrastructure.InMemoryRefundRepository;
 import com.example.infrastructure.InMemoryReservationRepository;
 import com.example.infrastructure.InMemoryTourRepository;
+import com.example.infrastructure.InMemoryTransferImportRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -31,6 +33,8 @@ class CancellationReasonValidationTest {
             tours,
             new InMemoryReservationRepository(),
             new InMemoryRefundRepository(),
+            new InMemoryClaimRepository(),
+            new InMemoryTransferImportRepository(),
             new InMemoryCancellationAuditRepository()
         );
         service.reserve("R1", "T001", "M001", 1, 0, "", DEPARTURE.minusDays(30));

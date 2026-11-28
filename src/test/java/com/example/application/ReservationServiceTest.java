@@ -5,9 +5,11 @@ import com.example.domain.Reservation;
 import com.example.domain.Tour;
 import com.example.domain.TransferStatus;
 import com.example.infrastructure.InMemoryCancellationAuditRepository;
+import com.example.infrastructure.InMemoryClaimRepository;
 import com.example.infrastructure.InMemoryRefundRepository;
 import com.example.infrastructure.InMemoryReservationRepository;
 import com.example.infrastructure.InMemoryTourRepository;
+import com.example.infrastructure.InMemoryTransferImportRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -34,6 +36,8 @@ class ReservationServiceTest {
             tours,
             new InMemoryReservationRepository(),
             new InMemoryRefundRepository(),
+            new InMemoryClaimRepository(),
+            new InMemoryTransferImportRepository(),
             new InMemoryCancellationAuditRepository()
         );
     }
@@ -194,7 +198,7 @@ class ReservationServiceTest {
         }
 
         @Test
-        @DisplayName("未振込の予約は取消料を請求しない")
+        @DisplayName("未振込の予約も取消料を請求する")
         void unpaid() {
             service.reserve("R1", "T001", 2, 1, "", DEPARTURE.minusDays(30));
             ReservationService.CancelResult result = service.cancel(
@@ -203,8 +207,9 @@ class ReservationServiceTest {
                 DEPARTURE.minusDays(1),
                 ReservationService.CancellationActor.counterStaff("E001")
             );
-            assertEquals(Money.zero(), result.fee());
+            assertEquals(Money.yen(30_000), result.fee());
             assertEquals(Money.zero(), result.refund());
+            assertEquals(Money.yen(30_000), result.claim());
         }
     }
 }
